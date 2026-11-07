@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Układ Słoneczny VR</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
+    #info {
+      position: absolute; top: 12px; left: 12px; max-width: 440px;
+      color: #ddd; font-size: 14px; line-height: 1.45;
+      background: rgba(0, 0, 0, 0.55); padding: 10px 14px; border-radius: 10px;
+    }
+    #info h1 { font-size: 18px; margin: 0 0 6px; color: #fff; }
+    #info ul { margin: 4px 0 0; padding-left: 18px; }
+    #error { color: #ff8080; font-weight: bold; display: none; margin-top: 8px; }
+  </style>
+
+  <!-- Biblioteka three.js jest w folderze lib/ (bez zależności od internetu/CDN) -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./lib/three.module.min.js",
+        "three/addons/": "./lib/addons/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="info">
+    <h1>Układ Słoneczny VR</h1>
+    Kliknij <b>ENTER VR</b> na dole ekranu (w goglach Meta Quest).
+    <ul>
+      <li><b>Spust</b> jednej ręki – złap i przesuń/obróć układ</li>
+      <li><b>Spusty obu rąk</b> – skaluj i obracaj (jak zoom na telefonie)</li>
+      <li><b>Promień + spust</b> na panelu – przyciski menu</li>
+      <li><b>Y</b> (lewy kontroler) – przywołaj menu przed siebie</li>
+    </ul>
+    Na PC: mysz obraca widok, kółko przybliża, klik w panel = przycisk.
+    <div id="error"></div>
+  </div>
+
+  <script>
+    // Podpowiedź dla początkujących: jeśli aplikacja nie wystartuje po 4 s,
+    // najczęściej plik został otwarty bezpośrednio z dysku (file://) zamiast przez serwer.
+    setTimeout(function () {
+      if (!window.__solarStarted) {
+        var e = document.getElementById('error');
+        e.style.display = 'block';
+        e.textContent = location.protocol === 'file:'
+          ? 'Otwórz stronę przez serwer HTTP (np. "python -m http.server 8000"), a nie bezpośrednio z dysku. Szczegóły w README.'
+          : 'Aplikacja nie wystartowała – otwórz konsolę przeglądarki (F12), aby zobaczyć błąd.';
+      }
+    }, 4000);
+  </script>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
