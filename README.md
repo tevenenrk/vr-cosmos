@@ -3,25 +3,63 @@
 Interaktywny Układ Słoneczny w goglach VR, działający w przeglądarce **Meta Quest Browser**.
 Nie trzeba nic instalować w goglach: wystarczy otworzyć stronę i kliknąć **ENTER VR**.
 
-**Etap 1 (gotowy):** Tryb 1 – model całego układu do orbity Plutona.
-**Etap 2 (w przygotowaniu):** Tryb 2 – duże modele planet + „nóż” do przecinania.
+Trzy tryby (przełączane na panelu menu):
+
+- **Tryb 1 – Model:** cały układ do orbity Plutona w prawdziwej skali, z księżycami i pierścieniami.
+  Można go trzymać w dłoni albo dolecieć do pojedynczej planety i oglądać ją z bliska.
+- **Tryb 2 – Planety:** Słońce i 8 planet obok siebie. Można je chwytać, skalować i **przecinać nożem**,
+  żeby zobaczyć warstwy wnętrza.
+- **Tryb 3 – Ludziki:** planeta o średnicy 1 m, po której chodzi 30 ludzików (1 cm wzrostu). Obracasz ją
+  i powiększasz, a ludziki rosną razem z nią.
 
 ---
 
-## Sterowanie (Tryb 1)
+## Sterowanie
+
+Wspólne dla wszystkich trybów:
 
 | Akcja | Kontrolery | Dłonie (hand tracking) |
 |---|---|---|
-| Złap i przesuń/obróć cały układ | spust jednej ręki | uszczypnięcie (kciuk + palec wskazujący) |
-| Skaluj i obracaj (zoom) | spusty obu rąk, rozsuń/zsuń dłonie | uszczypnięcie obiema dłońmi |
 | Przycisk w menu | wyceluj promieniem w panel, naciśnij spust | wyceluj, uszczypnij |
 | Przywołaj menu przed siebie | **Y** na lewym kontrolerze | – (menu samo wraca, gdy odejdziesz > 2,5 m) |
+| Skaluj i obracaj (zoom) | spusty obu rąk, rozsuń/zsuń dłonie | uszczypnięcie obiema dłońmi |
 
-Skala: od ok. **15 cm** (cały układ w dłoni) do **500×** (orbita Plutona ma 2,5 km, a Ty stoisz w środku).
-Jak „wlecieć” do planety: zmniejsz układ, przyłóż wybraną planetę między dłonie i rozsuń ręce.
-Powiększanie działa wokół punktu między dłońmi.
+### Tryb 1 – Model
 
-Na panelu menu widać aktualną skalę, średnicę orbity Plutona i **FPS** (cel: 72).
+| Akcja | Jak |
+|---|---|
+| Złap i przesuń/obróć cały układ | spust jednej ręki |
+| Płynny zoom wokół dłoni | **gałka** w górę/dół |
+| **Leć do planety / księżyca** | wyceluj promieniem w planetę (etykieta zrobi się żółta) i naciśnij **grip** (ściśnięcie) |
+| Pokaż układ księżyców tej planety | po przylocie naciśnij **grip** na tej samej planecie jeszcze raz |
+
+Skala: od ok. **15 cm** (cały układ w dłoni) do **5 mln ×** (wtedy Ziemia ma ok. 60 cm średnicy).
+Planety i księżyce mają prawdziwe rozmiary, więc z daleka są niewidoczne. Pokazuje je świecąca kropka,
+a gdy przybliżysz, pojawia się kula w kolorze planety. Księżyce (np. Księżyc, Io, Europa, Tytan, Charon)
+i ich orbity pokazują się dopiero, gdy podlecisz do ich planety. Pierścienie mają Saturn (wyraźne)
+oraz Jowisz, Uran i Neptun (słabe).
+
+### Tryb 2 – Planety i nóż
+
+| Akcja | Jak |
+|---|---|
+| Złap planetę z bliska | włóż kontroler w planetę i naciśnij spust |
+| Złap planetę z daleka | wyceluj promieniem i naciśnij spust: planeta przyleci do ręki |
+| Skaluj/obracaj planetę | złap ją obiema rękami |
+| Tabliczka z ciekawostkami | pojawia się, gdy wskazujesz lub trzymasz planetę |
+| Nóż wł./wył. | **A** na prawym kontrolerze (albo przycisk „Nóż” w menu) |
+| **Cięcie** | lewą ręką trzymaj planetę, prawą ustaw tarczę noża; żółty okrąg pokazuje linię cięcia. Naciśnij **prawy spust** |
+| Rozsuń połówki | każdą połówkę chwytasz osobno (lewa ręka trzyma swoją połówkę dalej) |
+| Sklej planety | **B** na prawym kontrolerze (albo przycisk „Sklej” w menu) |
+
+### Tryb 3 – Ludziki
+
+| Akcja | Jak |
+|---|---|
+| Obracaj planetę jak globus | złap spustem dowolnie i przeciągnij |
+| Skaluj i przesuwaj | spusty obu rąk (0,3× – 40×) |
+
+Na panelu menu widać skalę i **FPS** (cel: 72).
 
 ---
 
@@ -37,6 +75,8 @@ Na panelu menu widać aktualną skalę, średnicę orbity Plutona i **FPS** (cel
    ```
 4. W Chrome/Edge otwórz <http://localhost:8000>.
    Zobaczysz układ: myszą obracasz widok, kółkiem przybliżasz, klikasz w przyciski panelu.
+   Skróty na PC: Tryb 1 – **podwójny klik** na planecie = przelot, **+ / −** = zoom układu;
+   Tryb 2 – **C** = przetnij planetę pod kursorem, **G** = sklej.
    > Nie otwieraj `index.html` podwójnym kliknięciem: przeglądarka zablokuje moduły JavaScript, bo plik nie idzie przez serwer.
 5. *(Opcjonalnie)* Żeby przetestować VR na PC, zainstaluj w Chrome rozszerzenie
    **Immersive Web Emulator** (od Meta). Pojawi się przycisk ENTER VR i wirtualne kontrolery Questa
@@ -74,25 +114,39 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 | Stała | Znaczenie |
 |---|---|
 | `SYSTEM_DIAMETER_M` | średnica orbity Plutona przy skali 1 (domyślnie 5 m) |
-| `SYSTEM_SCALE_MIN / MAX` | zakres skali (0,03 = 15 cm, 500 = 2,5 km) |
+| `SYSTEM_SCALE_MIN / MAX` | zakres skali Trybu 1 (0,03 = 15 cm, 5e6 = planety jak piłki) |
+| `FOCUS_*`, `STICK_ZOOM_RATE` | przelot do planety, zoom gałką |
+| `MOONS`, `MOON_*` | księżyce: rozmiary, orbity, kolory; od kiedy są widoczne |
 | `MARKER_SIZE_PX`, `BODY_SWITCH_PX` | rozmiar kropek-markerów; od ilu pikseli rysować prawdziwą bryłę |
 | `TIME_SPEED_DAYS_PER_SEC` | prędkość czasu: 0 = model statyczny, np. 30 = planety krążą |
 | `USE_REAL_POSITIONS` | planety w przybliżonych pozycjach z dnia uruchomienia |
-| `MENU_SUMMON_BUTTON`, `KNIFE_BUTTON`, `RESET_BUTTON` | przypisanie przycisków kontrolerów |
+| `MODE2_*` | Tryb 2: rozmiar Ziemi, skala „edukacyjna” (pierwiastek), łuk, limity skali |
+| `KNIFE_*`, `CUT_*`, `LAYERS` | nóż, przekrój i proporcje warstw wnętrza każdej planety |
+| `MODE3_*` | Tryb 3: średnica planety, liczba/wzrost/prędkość ludzików, kolory |
+| `MENU_SUMMON_BUTTON`, `FOCUS_BUTTON`, `KNIFE_BUTTON`, `RESET_BUTTON` | przypisanie przycisków kontrolerów |
 | `FRAMEBUFFER_SCALE`, `FOVEATION`, `SPHERE_SEGMENTS_*` | wydajność |
 | `BODIES` | dane ciał: promienie, odległości, kolory, nazwy plików tekstur |
 
-## Jak to działa (Tryb 1)
+## Jak to działa
 
 - Cały układ to jedna `THREE.Group`. 1 j.a. = 2,5 m / 39,48 przy skali 1. **Promienie i odległości są w tej samej,
   rzeczywistej skali**, dlatego planety są mikroskopijne (średnica Ziemi to ok. 0,005 mm przy skali 1).
 - Co klatkę liczony jest rozmiar każdej bryły w pikselach (z kąta widzenia i rozdzielczości gogli).
   Jeśli bryła ma ponad 1 px, rysowana jest kula z teksturą, a jeśli mniej, świecąca kropka stałej wielkości.
-- Orbity są okrągłe i leżą w jednej płaszczyźnie. Model jest statyczny.
+- Orbity planet są okrągłe i leżą w jednej płaszczyźnie; księżyce krążą w płaszczyźnie równika swojej planety (np. przechylony Uran). Model jest statyczny.
 - Etykiety mają stały rozmiar kątowy. Gdy kilka ciał nakłada się w polu widzenia, wygrywają ważniejsze
   (Słońce, potem planety zewnętrzne).
-- Wydajność: `logarithmicDepthBuffer` (ogromny zakres skali), brak cieni, kule 32×16 segmentów, foveation,
-  kilkadziesiąt wywołań rysowania na klatkę.
+- Przelot do planety zmienia skalę logarytmicznie, więc zoom ×10 000 wygląda płynnie. Przy bardzo dużej skali orbity
+  planet są ukrywane, bo z bliska i tak byłyby prostymi liniami.
+- **Nóż (Tryb 2):** bez geometrii boolowskiej. Planeta jest zastępowana dwoma klonami z przeciwnymi płaszczyznami
+  przycinającymi (`renderer.localClippingEnabled`). W miejscu cięcia leży płaska tarcza z koncentrycznymi warstwami
+  (skorupa, płaszcz, jądro). Ich promienie są liczone dla odległości płaszczyzny od środka, więc cięcie z boku
+  pokazuje tylko zewnętrzne warstwy.
+- **Ludziki (Tryb 3):** 3 obiekty `InstancedMesh` (nogi, tułów, głowa) to 3 wywołania rysowania dla wszystkich
+  ludzików. Każdy idzie po wielkim kole planety z lekkim losowym skręcaniem. Są dziećmi planety, więc skalują się
+  i obracają razem z nią.
+- Wydajność: `logarithmicDepthBuffer` (ogromny zakres skali), brak cieni, mało segmentów kul w Trybie 1,
+  foveation, kilkadziesiąt wywołań rysowania na klatkę.
 
 ## Struktura plików
 
