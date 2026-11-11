@@ -16,6 +16,7 @@ Jeśli któregoś pliku brakuje, aplikacja działa dalej i używa prostej, kolor
 | `2k_uranus.jpg`             | Uran               | Solar System Scope |
 | `2k_neptune.jpg`            | Neptun             | Solar System Scope |
 | `2k_pluto.jpg`              | Pluton             | NASA (patrz niżej) |
+| `2k_moon.jpg`               | Księżyc            | Solar System Scope |
 
 ## Solar System Scope (CC BY 4.0)
 1. Wejdź na <https://www.solarsystemscope.com/textures/>.

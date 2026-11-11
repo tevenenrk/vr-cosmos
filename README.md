@@ -3,14 +3,19 @@
 Interaktywny Układ Słoneczny w goglach VR, działający w przeglądarce **Meta Quest Browser**.
 Nie trzeba nic instalować w goglach: wystarczy otworzyć stronę i kliknąć **ENTER VR**.
 
-Trzy tryby (przełączane na panelu menu):
+Pięć trybów (przełączane na panelu menu):
 
 - **Tryb 1 – Model:** cały układ do orbity Plutona w prawdziwej skali, z księżycami i pierścieniami.
   Można go trzymać w dłoni albo dolecieć do pojedynczej planety i oglądać ją z bliska.
-- **Tryb 2 – Planety:** Słońce i 8 planet obok siebie. Można je chwytać, skalować i **przecinać nożem**,
-  żeby zobaczyć warstwy wnętrza.
-- **Tryb 3 – Ludziki:** planeta o średnicy 1 m, po której chodzi 30 ludzików (1 cm wzrostu). Obracasz ją
-  i powiększasz, a ludziki rosną razem z nią.
+- **Tryb 2 – Planety:** Słońce, 8 planet, Pluton i 9 największych księżyców **w prawdziwych proporcjach**
+  (1 cm = 1274 km, więc Słońce ma ok. 11 m średnicy i „wschodzi” za planetami). Obiekty można chwytać,
+  rzucać, skalować i **przecinać nożem**: warstwy wnętrza są w proporcjach zgodnych z obecną wiedzą naukową.
+- **Tryb 3 – Ludziki:** planeta o średnicy 1 m, po której chodzi 30 ludzików (1 cm wzrostu).
+- **Tryb 4 – Obiekty:** czarna dziura, pulsar, biały karzeł i kometa. Są w wygodnych rozmiarach, a prawdziwe
+  rozmiary podają tabliczki. Pulsar i białego karła można przeciąć.
+- **Tryb 5 – Kosmos:** największa skala Wszechświata (1 m = 1 mln lat świetlnych). Wokół Ciebie latają
+  miniaturowe galaktyki, w tym Droga Mleczna, Andromeda i Galaktyka Trójkąta, a w tle widać sieć kosmiczną
+  (włókna i gromady galaktyk).
 
 ---
 
@@ -21,8 +26,10 @@ Wspólne dla wszystkich trybów:
 | Akcja | Kontrolery | Dłonie (hand tracking) |
 |---|---|---|
 | Przycisk w menu | wyceluj promieniem w panel, naciśnij spust | wyceluj, uszczypnij |
-| Przywołaj menu przed siebie | **Y** na lewym kontrolerze | – (menu samo wraca, gdy odejdziesz > 2,5 m) |
-| Skaluj i obracaj (zoom) | spusty obu rąk, rozsuń/zsuń dłonie | uszczypnięcie obiema dłońmi |
+| **Przesuń menu** | wyceluj w tło panelu (nie w przycisk), przytrzymaj spust lub grip i przesuń | wyceluj w tło, uszczypnij i przesuń |
+| **Schowaj / pokaż menu** | **Y** na lewym kontrolerze albo przycisk „Schowaj ✕”; schowane menu zostawia małą zakładkę „☰ Menu” w rogu widoku | zakładka „☰ Menu” |
+| Chwyć | **spust lub grip** (oba działają tak samo, poza Trybem 1) | uszczypnięcie |
+| Skaluj i obracaj (zoom) | chwyć obiema rękami, rozsuń/zsuń dłonie | uszczypnięcie obiema dłońmi |
 
 ### Tryb 1 – Model
 
@@ -30,34 +37,38 @@ Wspólne dla wszystkich trybów:
 |---|---|
 | Złap i przesuń/obróć cały układ | spust jednej ręki |
 | Płynny zoom wokół dłoni | **gałka** w górę/dół |
-| **Leć do planety / księżyca** | wyceluj promieniem w planetę (etykieta zrobi się żółta) i naciśnij **grip** (ściśnięcie) |
+| **Leć do planety / księżyca** | wyceluj promieniem w planetę (etykieta zrobi się żółta) i naciśnij **grip** |
 | Pokaż układ księżyców tej planety | po przylocie naciśnij **grip** na tej samej planecie jeszcze raz |
 
 Skala: od ok. **15 cm** (cały układ w dłoni) do **5 mln ×** (wtedy Ziemia ma ok. 60 cm średnicy).
-Planety i księżyce mają prawdziwe rozmiary, więc z daleka są niewidoczne. Pokazuje je świecąca kropka,
-a gdy przybliżysz, pojawia się kula w kolorze planety. Księżyce (np. Księżyc, Io, Europa, Tytan, Charon)
-i ich orbity pokazują się dopiero, gdy podlecisz do ich planety. Pierścienie mają Saturn (wyraźne)
-oraz Jowisz, Uran i Neptun (słabe).
 
-### Tryb 2 – Planety i nóż
+### Tryby 2 i 4 – Planety, Obiekty i nóż
 
 | Akcja | Jak |
 |---|---|
-| Złap planetę z bliska | włóż kontroler w planetę i naciśnij spust |
-| Złap planetę z daleka | wyceluj promieniem i naciśnij spust: planeta przyleci do ręki |
-| Skaluj/obracaj planetę | złap ją obiema rękami |
-| Tabliczka z ciekawostkami | pojawia się, gdy wskazujesz lub trzymasz planetę |
+| Złap obiekt z bliska | włóż kontroler w obiekt, naciśnij spust lub grip |
+| Złap obiekt z daleka | wyceluj promieniem, naciśnij spust lub grip: obiekt przyleci do ręki |
+| **Rzuć** | puść obiekt w ruchu: poleci chwilę i zatrzyma się jak w gęstej cieczy (bez grawitacji) |
+| Skaluj/obracaj | złap obiekt obiema rękami (Europę można powiększyć z 2,4 cm do ~1 m) |
+| Obróć Słońce | wyceluj w Słońce i obracaj dłonią (za duże, by je przyciągnąć) |
+| Tabliczka z danymi i warstwami | pojawia się, gdy wskazujesz lub trzymasz obiekt |
 | Nóż wł./wył. | **A** na prawym kontrolerze (albo przycisk „Nóż” w menu) |
-| **Cięcie** | lewą ręką trzymaj planetę, prawą ustaw tarczę noża; żółty okrąg pokazuje linię cięcia. Naciśnij **prawy spust** |
-| Rozsuń połówki | każdą połówkę chwytasz osobno (lewa ręka trzyma swoją połówkę dalej) |
-| Sklej planety | **B** na prawym kontrolerze (albo przycisk „Sklej” w menu) |
+| **Cięcie** | lewą ręką trzymaj obiekt, prawą ustaw tarczę noża; żółty okrąg pokazuje linię cięcia. Naciśnij **prawy spust** |
+| Sklej | **B** na prawym kontrolerze (albo przycisk „Sklej”) |
 
 ### Tryb 3 – Ludziki
 
 | Akcja | Jak |
 |---|---|
-| Obracaj planetę jak globus | złap spustem dowolnie i przeciągnij |
-| Skaluj i przesuwaj | spusty obu rąk (0,3× – 40×) |
+| Obracaj planetę jak globus | złap i przeciągnij; puść w ruchu – planeta kręci się dalej i powoli zwalnia |
+| Skaluj i przesuwaj | obie ręce (0,3× – 40×) |
+
+### Tryb 5 – Kosmos
+
+| Akcja | Jak |
+|---|---|
+| Przesuń/obróć cały Wszechświat | chwyć jedną ręką |
+| **Zobacz sieć kosmiczną** | chwyć obiema rękami i zsuń je: przy ok. 0,02× cała sieć (ok. 460 mln lat św.) mieści się wokół Ciebie |
 
 Na panelu menu widać skalę i **FPS** (cel: 72).
 
@@ -75,8 +86,8 @@ Na panelu menu widać skalę i **FPS** (cel: 72).
    ```
 4. W Chrome/Edge otwórz <http://localhost:8000>.
    Zobaczysz układ: myszą obracasz widok, kółkiem przybliżasz, klikasz w przyciski panelu.
-   Skróty na PC: Tryb 1 – **podwójny klik** na planecie = przelot, **+ / −** = zoom układu;
-   Tryb 2 – **C** = przetnij planetę pod kursorem, **G** = sklej.
+   Skróty na PC: **M** = pokaż/schowaj menu; Tryb 1 – **podwójny klik** na planecie = przelot, **+ / −** = zoom układu;
+   Tryby 2 i 4 – **C** = przetnij obiekt pod kursorem, **G** = sklej, **T** = rzuć obiekt pod kursorem.
    > Nie otwieraj `index.html` podwójnym kliknięciem: przeglądarka zablokuje moduły JavaScript, bo plik nie idzie przez serwer.
 5. *(Opcjonalnie)* Żeby przetestować VR na PC, zainstaluj w Chrome rozszerzenie
    **Immersive Web Emulator** (od Meta). Pojawi się przycisk ENTER VR i wirtualne kontrolery Questa
@@ -120,10 +131,14 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 | `MARKER_SIZE_PX`, `BODY_SWITCH_PX` | rozmiar kropek-markerów; od ilu pikseli rysować prawdziwą bryłę |
 | `TIME_SPEED_DAYS_PER_SEC` | prędkość czasu: 0 = model statyczny, np. 30 = planety krążą |
 | `USE_REAL_POSITIONS` | planety w przybliżonych pozycjach z dnia uruchomienia |
-| `MODE2_*` | Tryb 2: rozmiar Ziemi, skala „edukacyjna” (pierwiastek), łuk, limity skali |
-| `KNIFE_*`, `CUT_*`, `LAYERS` | nóż, przekrój i proporcje warstw wnętrza każdej planety |
+| `THROW_*` | rzucanie: opór „gęstej cieczy”, maksymalna prędkość |
+| `MODE2_*` | Tryb 2: rozmiar Ziemi (reszta w tej samej skali), łuk, położenie Słońca, limity skali |
+| `KNIFE_*`, `CUT_*`, `LAYERS` | nóż, przekrój i warstwy wnętrza każdego ciała |
 | `MODE3_*` | Tryb 3: średnica planety, liczba/wzrost/prędkość ludzików, kolory |
-| `MENU_SUMMON_BUTTON`, `FOCUS_BUTTON`, `KNIFE_BUTTON`, `RESET_BUTTON` | przypisanie przycisków kontrolerów |
+| `OBJECTS`, `MODE4_*`, `PULSAR_*`, `BLACK_HOLE_*` | Tryb 4: lista obiektów, rozmiary, animacje |
+| `GALAXY_*`, `WEB_*`, `UNIVERSE_*` | Tryb 5: liczba i rozmiary galaktyk, gęstość sieci kosmicznej, zakres skali |
+| `MENU_*` | panel menu: rozmiar, odległość, położenie zakładki schowanego menu |
+| `MENU_TOGGLE_BUTTON`, `FOCUS_BUTTON`, `KNIFE_BUTTON`, `RESET_BUTTON` | przypisanie przycisków kontrolerów |
 | `FRAMEBUFFER_SCALE`, `FOVEATION`, `SPHERE_SEGMENTS_*` | wydajność |
 | `BODIES` | dane ciał: promienie, odległości, kolory, nazwy plików tekstur |
 
@@ -138,7 +153,18 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
   (Słońce, potem planety zewnętrzne).
 - Przelot do planety zmienia skalę logarytmicznie, więc zoom ×10 000 wygląda płynnie. Przy bardzo dużej skali orbity
   planet są ukrywane, bo z bliska i tak byłyby prostymi liniami.
-- **Nóż (Tryb 2):** bez geometrii boolowskiej. Planeta jest zastępowana dwoma klonami z przeciwnymi płaszczyznami
+- **Warstwy wnętrza** są w prawdziwych proporcjach, np. skorupa Ziemi ma ok. 0,5% promienia, dlatego na przekroju
+  jest cienką linią. Źródła: sejsmologia Ziemi, Księżyca (Apollo) i Marsa (InSight 2023: ciekłe jądro ~1675 km
+  z warstwą stopionych krzemianów), Juno i Cassini (rozmyte jądra Jowisza i Saturna), Galileo i Cassini (oceany
+  Europy, Ganimedesa, Tytana, Enceladusa), New Horizons (Pluton). Warstwy niepewne mają w nazwie „(?)”.
+  Tabliczka podaje głębokość każdej warstwy w km.
+- **Rzucanie:** z ruchu obiektu w ostatnich 0,1 s liczona jest prędkość i obrót. Potem prędkość maleje
+  wykładniczo (`THROW_DRAG`), co daje wrażenie gęstej cieczy bez grawitacji.
+- **Kosmos (Tryb 5):** galaktyki to obrazki narysowane w kodzie, po 1 wywołaniu rysowania na rodzaj (spiralne,
+  z poprzeczką, eliptyczne, nieregularne). Sieć kosmiczna to ok. 30 000 punktów rozłożonych wzdłuż włókien między
+  40 gromadami. Gęstość galaktyk wokół Ciebie jest zwiększona dla efektu. Grupa Lokalna (Droga Mleczna, Andromeda,
+  Trójkąt) i Gromada w Pannie leżą w prawdziwych odległościach.
+- **Nóż (Tryby 2 i 4):** bez geometrii boolowskiej. Planeta jest zastępowana dwoma klonami z przeciwnymi płaszczyznami
   przycinającymi (`renderer.localClippingEnabled`). W miejscu cięcia leży płaska tarcza z koncentrycznymi warstwami
   (skorupa, płaszcz, jądro). Ich promienie są liczone dla odległości płaszczyzny od środka, więc cięcie z boku
   pokazuje tylko zewnętrzne warstwy.
