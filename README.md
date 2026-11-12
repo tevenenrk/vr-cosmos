@@ -10,7 +10,8 @@ Sześć trybów (przełączane na panelu menu):
 - **Tryb 2 – Planety:** Słońce, 8 planet, Pluton i 9 największych księżyców **w prawdziwych proporcjach**
   (1 cm = 1274 km, więc Słońce ma ok. 11 m średnicy i „wschodzi” za planetami). Obiekty można chwytać,
   rzucać, skalować i **przecinać nożem**: warstwy wnętrza są w proporcjach zgodnych z obecną wiedzą naukową.
-- **Tryb 3 – Ludziki:** planeta z modelu 3D (średnica 1 m), po której chodzi 30 ludzików (1 cm wzrostu).
+- **Tryb 3 – Ludziki:** planeta z modelu 3D (średnica 1 m), po której chodzi 30 ludzików z modelu 3D
+  ze szkieletem i animacją chodu (1 cm wzrostu, każdy w innej fazie kroku).
   Ludziki idą po rzeźbie terenu (góry, doliny) i omijają morza.
 - **Tryb 4 – Obiekty:** czarna dziura, pulsar, biały karzeł, Ziemia (dla porównania) i kometa. Są w wygodnych rozmiarach, a prawdziwe
   rozmiary podają tabliczki. Pulsar i białego karła można przeciąć.
@@ -217,6 +218,6 @@ textures/           – tekstury planet (patrz textures/README.md)
   Pluton: NASA/JHUAPL/SwRI (New Horizons), domena publiczna.
   Plików tekstur nie ma w repozytorium. Jak je pobrać i nazwać, opisuje [`textures/README.md`](textures/README.md).
   Bez nich aplikacja działa na kolorowych teksturach zastępczych.
-- **Modele 3D:** Ziemia i mała planeta wygenerowane w Meshy AI (pliki od autora projektu), uproszczone
+- **Modele 3D:** Ziemia, mała planeta i ludzik (animacje Mixamo) wygenerowane w Meshy AI (pliki od autora projektu), uproszczone
   narzędziem gltf-transform.
 - **Dane planet:** NASA Planetary Fact Sheet (<https://nssdc.gsfc.nasa.gov/planetary/factsheet/>).

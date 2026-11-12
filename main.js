@@ -171,6 +171,7 @@ const MODEL_FILES = {
 };
 const MODEL_LOAD_TIMEOUT_S = 40;    // po tylu sekundach przestajemy czekać na model
 const PERSON_ANIMATION = 'walk';    // fragment nazwy animacji chodu w pliku ludzika (np. "Walking")
+const PERSON_IDLE_ANIMATION = 'idle'; // animacja "stania" (człowiek w Trybie 6)
 const PERSON_MODEL_YAW_DEG = 0;     // obrót modelu ludzika, jeśli po wczytaniu "idzie bokiem"
 
 // --- Tryb 3: planeta z ludzikami ---------------------------------------
@@ -2131,7 +2132,7 @@ function buildSurfaceIndex(mesh, scale) {
         const y = Math.min(TW - 1, Math.max(0, Math.floor((uvHit.y % 1 + 1) % 1 * TW)));
         const o = (y * TW + x) * 4;
         const R = pix[o], G = pix[o + 1], B = pix[o + 2];
-        water = !(G > B + 5 || R > B + 20);           // ląd: zielony lub brązowy; reszta (niebieskie, chmury) = woda
+        water = (B >= G - 15 && B > R + 30) || (R > 200 && G > 200 && B > 200);   // niebieskie/turkusowe lub białe chmury = woda
       }
       last = { r: useT, water };
       return last;
@@ -2151,11 +2152,11 @@ const headMesh = new THREE.InstancedMesh(headGeo, new THREE.MeshLambertMaterial(
 for (const m of [legsMesh, torsoMesh, headMesh]) { m.frustumCulled = false; m3Planet.add(m); }
 
 // Ludzik z modelu (person.glb): kopia ze szkieletem + animacja chodu. Zwraca { root, mixer } albo null.
-const personClip = models.person
-  ? (models.person.animations.find(a => a.name.toLowerCase().includes(PERSON_ANIMATION.toLowerCase())) || models.person.animations[0] || null)
+const findClip = name => models.person
+  ? (models.person.animations.find(a => a.name.toLowerCase().includes(name.toLowerCase())) || models.person.animations[0] || null)
   : null;
 const personBox = models.person ? new THREE.Box3().setFromObject(models.person.scene) : null;
-function makePersonModel(heightM, rnd = Math.random) {
+function makePersonModel(heightM, rnd = Math.random, animation = PERSON_ANIMATION) {
   if (!models.person) return null;
   const holder = new THREE.Group();
   const c = SkeletonUtils.clone(models.person.scene);
@@ -2167,10 +2168,11 @@ function makePersonModel(heightM, rnd = Math.random) {
   c.traverse(o => { if (o.isMesh) o.frustumCulled = false; });
   holder.add(c);
   const mixer = new THREE.AnimationMixer(c);
-  if (personClip) {
-    const action = mixer.clipAction(personClip);
+  const clip = findClip(animation);
+  if (clip) {
+    const action = mixer.clipAction(clip);
     action.play();
-    action.time = rnd() * personClip.duration;
+    action.time = rnd() * clip.duration;           // każdy ludzik w innej fazie kroku
   }
   return { root: holder, mixer };
 }
@@ -2599,7 +2601,7 @@ const SCALE_BUILDERS = {
     return g;
   },
   human() {
-    const model = makePersonModel(1);
+    const model = makePersonModel(1, Math.random, PERSON_IDLE_ANIMATION);
     if (model) { model.root.userData.mixer = model.mixer; return model.root; }
     const g = new THREE.Group();
     const skin = stdMat(0xf0c8a0), shirt = stdMat(0x3a78c8), pants = stdMat(0x2c3e50), hair = stdMat(0x3a2a1a), shoe = stdMat(0x222222);
