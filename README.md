@@ -3,19 +3,25 @@
 Interaktywny Układ Słoneczny w goglach VR, działający w przeglądarce **Meta Quest Browser**.
 Nie trzeba nic instalować w goglach: wystarczy otworzyć stronę i kliknąć **ENTER VR**.
 
-Pięć trybów (przełączane na panelu menu):
+Sześć trybów (przełączane na panelu menu):
 
 - **Tryb 1 – Model:** cały układ do orbity Plutona w prawdziwej skali, z księżycami i pierścieniami.
   Można go trzymać w dłoni albo dolecieć do pojedynczej planety i oglądać ją z bliska.
 - **Tryb 2 – Planety:** Słońce, 8 planet, Pluton i 9 największych księżyców **w prawdziwych proporcjach**
   (1 cm = 1274 km, więc Słońce ma ok. 11 m średnicy i „wschodzi” za planetami). Obiekty można chwytać,
   rzucać, skalować i **przecinać nożem**: warstwy wnętrza są w proporcjach zgodnych z obecną wiedzą naukową.
-- **Tryb 3 – Ludziki:** planeta o średnicy 1 m, po której chodzi 30 ludzików (1 cm wzrostu).
-- **Tryb 4 – Obiekty:** czarna dziura, pulsar, biały karzeł i kometa. Są w wygodnych rozmiarach, a prawdziwe
+- **Tryb 3 – Ludziki:** planeta z modelu 3D (średnica 1 m), po której chodzi 30 ludzików (1 cm wzrostu).
+  Ludziki idą po rzeźbie terenu (góry, doliny) i omijają morza.
+- **Tryb 4 – Obiekty:** czarna dziura, pulsar, biały karzeł, Ziemia (dla porównania) i kometa. Są w wygodnych rozmiarach, a prawdziwe
   rozmiary podają tabliczki. Pulsar i białego karła można przeciąć.
 - **Tryb 5 – Kosmos:** największa skala Wszechświata (1 m = 1 mln lat świetlnych). Wokół Ciebie latają
   miniaturowe galaktyki, w tym Droga Mleczna, Andromeda i Galaktyka Trójkąta, a w tle widać sieć kosmiczną
   (włókna i gromady galaktyk).
+- **Tryb 6 – Skala:** podróż przez rzędy wielkości: bakteria (2 µm) → krwinka → włos → mrówka → chomik →
+  człowiek → wieża Eiffla → Mount Everest → Ziemia (12 742 km). Obiekty za małe, by je zobaczyć, i za duże,
+  by je ogarnąć, płynnie znikają.
+
+Ziemia we wszystkich trybach to model 3D z teksturą (`models/earth.glb`).
 
 ---
 
@@ -70,6 +76,16 @@ Skala: od ok. **15 cm** (cały układ w dłoni) do **5 mln ×** (wtedy Ziemia ma
 | Przesuń/obróć cały Wszechświat | chwyć jedną ręką |
 | **Zobacz sieć kosmiczną** | chwyć obiema rękami i zsuń je: przy ok. 0,02× cała sieć (ok. 460 mln lat św.) mieści się wokół Ciebie |
 
+### Tryb 6 – Skala
+
+| Akcja | Jak |
+|---|---|
+| Płynny zoom | **gałka** w górę (przybliżanie) / w dół (oddalanie) |
+| Skok do następnego większego / mniejszego obiektu | **A** / **B** (albo przyciski w menu) |
+| Prędkość zoomu i skoków | **suwak** w menu (przeciągnij promieniem) |
+
+Napis pod obiektami podaje skalę, np. „1 m w goglach = 2,9 m naprawdę”.
+
 Na panelu menu widać skalę i **FPS** (cel: 72).
 
 ---
@@ -87,7 +103,8 @@ Na panelu menu widać skalę i **FPS** (cel: 72).
 4. W Chrome/Edge otwórz <http://localhost:8000>.
    Zobaczysz układ: myszą obracasz widok, kółkiem przybliżasz, klikasz w przyciski panelu.
    Skróty na PC: **M** = pokaż/schowaj menu; Tryb 1 – **podwójny klik** na planecie = przelot, **+ / −** = zoom układu;
-   Tryby 2 i 4 – **C** = przetnij obiekt pod kursorem, **G** = sklej, **T** = rzuć obiekt pod kursorem.
+   Tryby 2 i 4 – **C** = przetnij obiekt pod kursorem, **G** = sklej, **T** = rzuć obiekt pod kursorem;
+   Tryb 6 – **+ / −** = zoom, **N / P** = następny/poprzedni obiekt, **[ / ]** = prędkość.
    > Nie otwieraj `index.html` podwójnym kliknięciem: przeglądarka zablokuje moduły JavaScript, bo plik nie idzie przez serwer.
 5. *(Opcjonalnie)* Żeby przetestować VR na PC, zainstaluj w Chrome rozszerzenie
    **Immersive Web Emulator** (od Meta). Pojawi się przycisk ENTER VR i wirtualne kontrolery Questa
@@ -137,6 +154,8 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 | `MODE3_*` | Tryb 3: średnica planety, liczba/wzrost/prędkość ludzików, kolory |
 | `OBJECTS`, `MODE4_*`, `PULSAR_*`, `BLACK_HOLE_*` | Tryb 4: lista obiektów, rozmiary, animacje |
 | `GALAXY_*`, `WEB_*`, `UNIVERSE_*` | Tryb 5: liczba i rozmiary galaktyk, gęstość sieci kosmicznej, zakres skali |
+| `MODEL_FILES`, `PERSON_*` | pliki modeli 3D; nazwa animacji chodu i obrót modelu ludzika |
+| `SCALE_*`, `SCALE_OBJECTS` | Tryb 6: lista obiektów (rozmiar, opis), progi znikania, prędkość zoomu |
 | `MENU_*` | panel menu: rozmiar, odległość, położenie zakładki schowanego menu |
 | `MENU_TOGGLE_BUTTON`, `FOCUS_BUTTON`, `KNIFE_BUTTON`, `RESET_BUTTON` | przypisanie przycisków kontrolerów |
 | `FRAMEBUFFER_SCALE`, `FOVEATION`, `SPHERE_SEGMENTS_*` | wydajność |
@@ -174,12 +193,20 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 - Wydajność: `logarithmicDepthBuffer` (ogromny zakres skali), brak cieni, mało segmentów kul w Trybie 1,
   foveation, kilkadziesiąt wywołań rysowania na klatkę.
 
+- **Tryb 6:** zamiast przesuwać kamerę, aplikacja skaluje obiekty. `log10(ile metrów naprawdę = 1 m w goglach)`
+  zmienia się płynnie, a środek rzędu przesuwa się od obiektu do obiektu. Obiekty mniejsze niż 4 mm
+  i większe niż 60 m (w goglach) płynnie znikają.
+- **Ludziki na planecie z modelu:** trójkąty planety są posortowane w siatkę 128 × 64 kierunków, więc „promień od
+  środka” sprawdza tylko kilkadziesiąt trójkątów. Model jest dwuwarstwową skorupą, więc grunt to drugie trafienie.
+  Woda jest rozpoznawana po kolorze tekstury (niebieskie = morze).
+
 ## Struktura plików
 
 ```
 index.html          – strona startowa (przycisk ENTER VR, import three.js)
 main.js             – cała aplikacja; konfiguracja na górze pliku
-lib/                – three.js r170 (lokalna kopia, licencja MIT)
+lib/                – three.js r170 + dodatki (VRButton, OrbitControls, GLTFLoader, SkeletonUtils), licencja MIT
+models/             – modele 3D .glb (patrz models/README.md)
 textures/           – tekstury planet (patrz textures/README.md)
 ```
 
@@ -190,4 +217,6 @@ textures/           – tekstury planet (patrz textures/README.md)
   Pluton: NASA/JHUAPL/SwRI (New Horizons), domena publiczna.
   Plików tekstur nie ma w repozytorium. Jak je pobrać i nazwać, opisuje [`textures/README.md`](textures/README.md).
   Bez nich aplikacja działa na kolorowych teksturach zastępczych.
+- **Modele 3D:** Ziemia i mała planeta wygenerowane w Meshy AI (pliki od autora projektu), uproszczone
+  narzędziem gltf-transform.
 - **Dane planet:** NASA Planetary Fact Sheet (<https://nssdc.gsfc.nasa.gov/planetary/factsheet/>).

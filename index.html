@@ -14,6 +14,7 @@
     #info h1 { font-size: 18px; margin: 0 0 6px; color: #fff; }
     #info ul { margin: 4px 0 0; padding-left: 18px; }
     #error { color: #ff8080; font-weight: bold; display: none; margin-top: 8px; }
+    #loading { color: #ffd27a; font-weight: bold; display: none; margin-top: 8px; }
   </style>
 
   <!-- Biblioteka three.js jest w folderze lib/ (bez zależności od internetu/CDN) -->
@@ -35,10 +36,12 @@
       <li><b>Obie ręce</b> – skaluj i obracaj (jak zoom na telefonie)</li>
       <li>Tryb 1: <b>grip</b> przy wskazaniu planety – przelot, <b>gałka</b> – zoom</li>
       <li>Tryby 2 i 4: <b>A</b> – nóż, <b>prawy spust</b> – tnij, <b>B</b> – sklej</li>
+      <li>Tryb 6: <b>gałka</b> – zoom, <b>A/B</b> – skok do większego/mniejszego obiektu</li>
       <li><b>Y</b> – pokaż/schowaj menu; tło panelu chwytasz, żeby go przesunąć</li>
     </ul>
     Na PC: mysz obraca widok, kółko przybliża, klik w panel = przycisk, <b>M</b> = menu.<br>
-    Tryb 1: podwójny klik na planecie = przelot, +/− = zoom. Tryby 2/4: C = przetnij obiekt pod kursorem, G = sklej, T = rzuć.
+    Tryb 1: podwójny klik na planecie = przelot, +/− = zoom. Tryby 2/4: C = przetnij obiekt pod kursorem, G = sklej, T = rzuć. Tryb 6: +/− = zoom, N/P = następny/poprzedni, [ ] = prędkość.
+    <div id="loading">⏳ Ładowanie modeli 3D (kilka sekund)…</div>
     <div id="error"></div>
   </div>
 

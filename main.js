@@ -6,6 +6,7 @@
 //  Tryb 3: mała planeta z chodzącymi ludzikami
 //  Tryb 4: niezwykłe obiekty (czarna dziura, pulsar, biały karzeł, kometa)
 //  Tryb 5: kosmos w największej skali – galaktyki i sieć kosmiczna
+//  Tryb 6: skala – od bakterii do Ziemi (skoki i płynny zoom)
 // =====================================================================
 //
 //  Wszystkie ustawienia, które warto zmieniać, są w sekcji KONFIGURACJA
@@ -14,8 +15,10 @@
 // =====================================================================
 
 import * as THREE from 'three';
-import { VRButton } from 'three/addons/VRButton.js';
-import { OrbitControls } from 'three/addons/OrbitControls.js';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
 // =====================================================================
 //  KONFIGURACJA
@@ -158,6 +161,18 @@ const LAYERS = {
                { name: 'Jądro węglowo-tlenowe', f: 0.980, color: '#ffd890' }, { name: 'Skrystalizowane centrum (w chłodnych karłach)', f: 0.500, color: '#ffffff' } ],
 };
 
+// --- Modele 3D (.glb w folderze models/) ----------------------------------
+//  Jeśli pliku nie ma, aplikacja używa prostych kształtów z kodu.
+const MODEL_PATH = 'models/';
+const MODEL_FILES = {
+  earth: 'earth.glb',               // Ziemia z teksturą – używana we wszystkich trybach
+  smallPlanet: 'small_planet.glb',  // planeta Trybu 3
+  person: 'person.glb',             // ludzik ze szkieletem i animacją chodu (Tryb 3 i Tryb 6)
+};
+const MODEL_LOAD_TIMEOUT_S = 40;    // po tylu sekundach przestajemy czekać na model
+const PERSON_ANIMATION = 'walk';    // fragment nazwy animacji chodu w pliku ludzika (np. "Walking")
+const PERSON_MODEL_YAW_DEG = 0;     // obrót modelu ludzika, jeśli po wczytaniu "idzie bokiem"
+
 // --- Tryb 3: planeta z ludzikami ---------------------------------------
 const MODE3_PLANET_DIAMETER_M = 1.0;   // średnica planety na starcie [m]
 const MODE3_DISTANCE_M = 1.45;         // środek planety tak daleko przed oczami [m] (przód planety ~0,95 m od oczu)
@@ -166,6 +181,8 @@ const MODE3_PEOPLE_COUNT = 30;         // liczba ludzików
 const MODE3_PERSON_HEIGHT_M = 0.01;    // wzrost ludzika przy skali 1 [m]
 const MODE3_PERSON_SPEED_MPS = 0.015;  // prędkość marszu przy skali 1 [m/s]
 const MODE3_TURN_NOISE = 1.5;          // jak bardzo ludziki skręcają losowo (0 = idą prosto)
+const MODE3_AVOID_WATER = true;        // ludziki omijają morza (planeta z modelu: wykrywanie po kolorze tekstury)
+const MODE3_PLANET_SPIN_DEG_S = 0;     // samodzielny obrót planety [stopnie/s] (0 = stoi)
 const MODE3_SCALE_MIN = 0.3;           // minimalna skala planety
 const MODE3_SCALE_MAX = 40;            // maksymalna skala (40 m planeta, ludzik 40 cm)
 const MODE3_OCEAN_COLOR = '#2a62b8';
@@ -189,6 +206,31 @@ const WEB_FILAMENT_WIDTH_M = 3.5;      // grubość włókien [m]
 const UNIVERSE_SCALE_MIN = 0.02;       // zmniejszenie: cała sieć mieści się w pokoju
 const UNIVERSE_SCALE_MAX = 20;
 
+// --- Tryb 6: skala – od bakterii do Ziemi --------------------------------------
+const SCALE_FOCUS_SIZE_M = 0.6;      // obiekt "w centrum uwagi" ma w goglach taki rozmiar [m]
+const SCALE_DISTANCE_M = 1.2;        // przód obiektów tak daleko przed oczami [m]
+const SCALE_BASELINE_Y_M = 0.75;     // obiekty stoją na wysokości stołu nad podłogą [m]
+const SCALE_HIDE_SMALL_M = 0.004;    // obiekt mniejszy w goglach niż 4 mm znika (za mały, by go zobaczyć)
+const SCALE_HIDE_LARGE_M = 60;       // obiekt większy niż 60 m znika (za duży, by go ogarnąć)
+const SCALE_FADE_FACTOR = 2.5;       // płynne znikanie w przedziale ×2,5
+const SCALE_SPEED_DEFAULT = 0.8;     // prędkość zoomu: ile rzędów wielkości (×10) na sekundę
+const SCALE_SPEED_MIN = 0.1;
+const SCALE_SPEED_MAX = 4;
+const SCALE_ROW_GAP = 0.7;           // odstęp między obiektami w rzędzie (w ich rozmiarach)
+const SCALE_TURN_DEG_S = 10;         // obiekty powoli obracają się, by pokazać kształt
+// sizeM = rozmiar w metrach (wymiar podany w sizeText); kolejność: od najmniejszego
+const SCALE_OBJECTS = [
+  { id: 'bacterium', name: 'Bakteria E. coli', sizeM: 2e-6, sizeText: 'długość 2 µm', fact: 'Na główce szpilki zmieściłoby się ich ok. pół miliona.' },
+  { id: 'rbc', name: 'Czerwona krwinka', sizeM: 7.5e-6, sizeText: 'średnica 7,5 µm', fact: 'W jednej kropli krwi jest ich ok. 250 milionów.' },
+  { id: 'hair', name: 'Włos ludzki', sizeM: 4.2e-4, sizeText: 'grubość 0,07 mm', fact: 'Rośnie ok. 1 cm na miesiąc. Pokrywają go łuski jak dachówki.' },
+  { id: 'ant', name: 'Mrówka', sizeM: 5e-3, sizeText: 'długość 5 mm', fact: 'Potrafi unieść ciężar 10–50 razy większy od siebie.' },
+  { id: 'hamster', name: 'Chomik', sizeM: 0.12, sizeText: 'długość 12 cm', fact: 'W torbach policzkowych przenosi jedzenie na zapas.' },
+  { id: 'human', name: 'Człowiek', sizeM: 1.75, sizeText: 'wzrost 1,75 m', fact: 'Składa się z ok. 30 bilionów komórek.' },
+  { id: 'eiffel', name: 'Wieża Eiffla', sizeM: 330, sizeText: 'wysokość 330 m', fact: 'Latem jest o ok. 15 cm wyższa – stal rozszerza się od ciepła.' },
+  { id: 'everest', name: 'Mount Everest', sizeM: 8849, sizeText: 'wysokość 8849 m n.p.m.', fact: 'Najwyższy szczyt Ziemi; rośnie ok. 4 mm na rok.' },
+  { id: 'earth', name: 'Ziemia', sizeM: 12742e3, sizeText: 'średnica 12 742 km', fact: 'Gdyby była wielkości jabłka, Everest byłby cieńszy niż jego skórka.' },
+];
+
 // --- Menu (panel w VR) ------------------------------------------------
 const MENU_WIDTH_M = 0.48;          // szerokość panelu [m]
 const MENU_DISTANCE_M = 0.6;        // odległość panelu od oczu [m]
@@ -202,9 +244,9 @@ const RAY_LENGTH_M = 0.6;           // długość promienia kontrolera [m]
 //  4 = A (prawy) / X (lewy), 5 = B (prawy) / Y (lewy)
 const MENU_TOGGLE_BUTTON = 5;       // Y na lewym kontrolerze -> pokaż/schowaj menu
 const FOCUS_BUTTON = 1;             // grip: Tryb 1 – leć do wskazanej planety (w innych trybach grip = chwyć)
-const KNIFE_BUTTON = 4;             // A na prawym kontrolerze -> nóż wł./wył. (Tryby 2, 4)
-const RESET_BUTTON = 5;             // B na prawym kontrolerze -> sklej (Tryby 2, 4)
-const ZOOM_STICK_AXIS = 3;          // oś gałki (3 = góra/dół) – Tryb 1: zoom
+const KNIFE_BUTTON = 4;             // A na prawym kontrolerze -> nóż wł./wył. (Tryby 2, 4); Tryb 6: następny obiekt
+const RESET_BUTTON = 5;             // B na prawym kontrolerze -> sklej (Tryby 2, 4); Tryb 6: poprzedni obiekt
+const ZOOM_STICK_AXIS = 3;          // oś gałki (3 = góra/dół) – Tryby 1 i 6: zoom
 
 // --- Wygląd -----------------------------------------------------------
 const COLOR_BACKGROUND = 0x000006;
@@ -313,6 +355,9 @@ const OBJECTS = [
   { id: 'whitedwarf', name: 'Biały karzeł (Syriusz B)', visual: 'whitedwarf', radiusKm: 5800, displayRadiusM: 0.13, pickFactor: 1.2, extentFactor: 1.6, color: 0xeef4ff,
     info: { rows: [['Średnica', 'ok. 11 600 km (jak Ziemia)'], ['Masa', '~1 masa Słońca'], ['Temperatura', 'ok. 25 000 °C']],
       fact: 'Tak skończy nasze Słońce – za ok. 6 mld lat.' } },
+  { id: 'earth', name: 'Ziemia (dla porównania)', visual: 'earth', radiusKm: 6371, displayRadiusM: 0.12, pickFactor: 1.1, extentFactor: 1.2, color: 0x3d7fe0, tilt: 23.44,
+    info: { rows: [['Średnica', '12 742 km'], ['Masa', '1/333 000 masy Słońca'], ['Porównaj', 'biały karzeł ma podobną średnicę!']],
+      fact: 'Gwiazda neutronowa jest 500 razy mniejsza od Ziemi, a cięższa od Słońca.' } },
   { id: 'comet', name: 'Kometa 67P', visual: 'comet', displayRadiusM: 0.1, cuttable: false, pickFactor: 1.6, extentFactor: 2.5, color: 0x5a5652,
     info: { rows: [['Jądro', '4,1 × 3,3 km'], ['Okres obiegu', '6,4 roku'], ['Badała ją', 'sonda Rosetta (2014–2016)']],
       fact: '„Brudna kula śnieżna” z lodu, pyłu i związków organicznych. Warkocz zawsze wskazuje od Słońca.' } },
@@ -410,6 +455,53 @@ window.addEventListener('resize', () => {
 const raycaster = new THREE.Raycaster();
 const sphereGeometry = new THREE.SphereGeometry(1, SPHERE_SEGMENTS_W, SPHERE_SEGMENTS_H);
 const sphereGeometryHi = new THREE.SphereGeometry(1, MODE2_SPHERE_SEGMENTS_W, MODE2_SPHERE_SEGMENTS_H);
+
+// =====================================================================
+//  WCZYTYWANIE MODELI 3D (przed zbudowaniem scen – trwa kilka sekund)
+// =====================================================================
+const gltfLoader = new GLTFLoader();
+function loadGLB(file) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => { console.warn(`[modele] ${file}: przekroczony czas wczytywania`); resolve(null); }, MODEL_LOAD_TIMEOUT_S * 1000);
+    gltfLoader.load(MODEL_PATH + file,
+      gltf => { clearTimeout(timer); resolve(gltf); },
+      undefined,
+      () => { clearTimeout(timer); console.info(`[modele] Brak pliku ${MODEL_PATH}${file} – używam kształtu z kodu.`); resolve(null); });
+  });
+}
+const loadingEl = document.getElementById('loading');
+if (loadingEl) loadingEl.style.display = 'block';
+const models = {};
+{
+  const keys = Object.keys(MODEL_FILES);
+  const loaded = await Promise.all(keys.map(k => loadGLB(MODEL_FILES[k])));
+  keys.forEach((k, i) => { models[k] = loaded[i]; });
+}
+if (loadingEl) loadingEl.style.display = 'none';
+
+// Promień modelu (największe odchylenie od środka) – do normalizacji rozmiaru
+function modelRadius(root) {
+  const box = new THREE.Box3().setFromObject(root);
+  return Math.max(...box.min.toArray().map(Math.abs), ...box.max.toArray().map(Math.abs));
+}
+const earthModelRadius = models.earth ? modelRadius(models.earth.scene) : 1;
+
+// Ziemia z modelu: kopia z własnymi materiałami (żeby można było ją przyciąć nożem)
+function buildEarthModel(R, clip = null) {
+  const group = new THREE.Group();
+  const m = models.earth.scene.clone(true);
+  const materials = [];
+  m.traverse(o => {
+    if (!o.isMesh) return;
+    o.material = o.material.clone();
+    o.material.clippingPlanes = clip;
+    o.frustumCulled = false;
+    materials.push(o.material);
+  });
+  m.scale.setScalar(R / earthModelRadius);
+  group.add(m);
+  return { group, materials };
+}
 
 // =====================================================================
 //  TEKSTURY POMOCNICZE (generowane w kodzie)
@@ -870,7 +962,9 @@ for (const def of BODIES) {
   b.pivot.rotation.z = def.tilt * DEG;
   systemGroup.add(b.pivot);
 
-  b.mesh = new THREE.Mesh(sphereGeometry, makePlanetMaterial(def));
+  b.mesh = (def.id === 'earth' && models.earth)
+    ? buildEarthModel(1).group                                  // Ziemia z modelu 3D
+    : new THREE.Mesh(sphereGeometry, makePlanetMaterial(def));
   b.mesh.scale.setScalar(b.radiusUnits);
   b.mesh.visible = false;
   b.pivot.add(b.mesh);
@@ -1293,11 +1387,17 @@ function zoomSystemAround(pivot, factor) {
 // =====================================================================
 function buildVisual(def, R, clipPlane = null) {
   const clip = clipPlane ? [clipPlane] : null;
+  if (def.id === 'earth' && models.earth) {
+    const v = buildEarthModel(R, clip);
+    v.group.rotation.z = (def.tilt || 0) * DEG;
+    return v;
+  }
   switch (def.visual) {
     case 'blackhole': return buildBlackHole(def, R);
     case 'pulsar': return buildPulsar(def, R, clip);
     case 'whitedwarf': return buildWhiteDwarf(def, R, clip);
     case 'comet': return buildComet(def, R);
+    case 'earth':
     default: return buildPlanetVisual(def, R, clip);
   }
 }
@@ -1926,12 +2026,117 @@ const m3Planet = new THREE.Group();              // to chwytamy; ludziki są jeg
 m3Planet.userData.throwable = true;
 mode3Group.add(m3Planet);
 const M3_R = MODE3_PLANET_DIAMETER_M / 2;
-{
+
+// Powierzchnia planety: promień gruntu i "czy to woda" w danym kierunku (w układzie planety, skala 1)
+let m3Surface;
+if (models.smallPlanet) {
+  const root = models.smallPlanet.scene;
+  let mesh = null;
+  root.traverse(o => { if (o.isMesh && !mesh) mesh = o; });
+  root.updateMatrixWorld(true);
+  m3Surface = buildSurfaceIndex(mesh, M3_R);     // model ma promień ~1 -> skalujemy do M3_R
+  root.scale.setScalar(M3_R);
+  root.traverse(o => { if (o.isMesh) o.frustumCulled = false; });
+  m3Planet.add(root);
+} else {
   const [canvas, ctx] = makeCanvas(1024, 512);
   drawContinents(ctx, 1024, 512, seededRandom('mode3'), MODE3_OCEAN_COLOR, MODE3_LAND_COLORS, 60);
   const mesh = new THREE.Mesh(sphereGeometryHi, new THREE.MeshLambertMaterial({ map: canvasTexture(canvas) }));
   mesh.scale.setScalar(M3_R);
   m3Planet.add(mesh);
+  m3Surface = { query: () => ({ r: M3_R, water: false }) };
+}
+
+// Szybkie "promienie od środka planety": trójkąty posortowane w siatkę długość × szerokość geograficzna,
+// więc każde zapytanie sprawdza tylko kilkadziesiąt trójkątów zamiast dziesiątek tysięcy.
+// Model jest "skorupą" z dwiema warstwami – grunt to DRUGIE trafienie licząc od środka.
+function buildSurfaceIndex(mesh, scale) {
+  const geo = mesh.geometry;
+  const pa = geo.attributes.position, uva = geo.attributes.uv;
+  const n = pa.count;
+  const P = new Float32Array(n * 3);
+  const v = new THREE.Vector3();
+  for (let i = 0; i < n; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(mesh.matrixWorld).multiplyScalar(scale); P.set([v.x, v.y, v.z], i * 3); }
+  const idx = geo.index ? geo.index.array : Array.from({ length: n }, (_, i) => i);
+  const triCount = idx.length / 3;
+  const NLON = 128, NLAT = 64;
+  const binOf = (x, y, z) => {
+    const r = Math.hypot(x, y, z) || 1;
+    const i = Math.floor((Math.atan2(z, x) + Math.PI) / (2 * Math.PI) * NLON) % NLON;
+    const j = Math.min(NLAT - 1, Math.floor((Math.asin(THREE.MathUtils.clamp(y / r, -1, 1)) + Math.PI / 2) / Math.PI * NLAT));
+    return [i, j];
+  };
+  const bins = Array.from({ length: NLON * NLAT }, () => []);
+  for (let t = 0; t < triCount; t++) {
+    const seen = new Set();
+    let cx = 0, cy = 0, cz = 0;
+    for (let k = 0; k < 3; k++) {
+      const o = idx[t * 3 + k] * 3;
+      cx += P[o]; cy += P[o + 1]; cz += P[o + 2];
+      const [i, j] = binOf(P[o], P[o + 1], P[o + 2]);
+      seen.add(j * NLON + i);
+    }
+    const [i, j] = binOf(cx, cy, cz);
+    seen.add(j * NLON + i);
+    for (const b of seen) bins[b].push(t);
+  }
+  // mała kopia tekstury do rozpoznawania wody (niebieskie = morze)
+  let pix = null;
+  const TW = 256;
+  const img = mesh.material && mesh.material.map && mesh.material.map.image;
+  if (img && MODE3_AVOID_WATER) {
+    try {
+      const [canvas, ctx] = makeCanvas(TW, TW);
+      ctx.drawImage(img, 0, 0, TW, TW);
+      pix = ctx.getImageData(0, 0, TW, TW).data;
+    } catch (e) { pix = null; }
+  }
+  const stamp = new Int32Array(triCount);
+  let query = 0;
+  const ray = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3());
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), hit = new THREE.Vector3();
+  const ua = new THREE.Vector2(), ub = new THREE.Vector2(), uc = new THREE.Vector2(), uvHit = new THREE.Vector2();
+  let last = { r: scale, water: false };
+  return {
+    query(dir) {
+      query++;
+      ray.direction.copy(dir);
+      const [bi, bj] = binOf(dir.x, dir.y, dir.z);
+      let t1 = Infinity, t2 = Infinity, tri1 = -1, tri2 = -1;
+      for (let dj = -1; dj <= 1; dj++) {
+        const j = bj + dj;
+        if (j < 0 || j >= NLAT) continue;
+        for (let di = -1; di <= 1; di++) {
+          for (const t of bins[j * NLON + ((bi + di + NLON) % NLON)]) {
+            if (stamp[t] === query) continue;
+            stamp[t] = query;
+            const ia = idx[t * 3] * 3, ib = idx[t * 3 + 1] * 3, ic = idx[t * 3 + 2] * 3;
+            a.set(P[ia], P[ia + 1], P[ia + 2]); b.set(P[ib], P[ib + 1], P[ib + 2]); c.set(P[ic], P[ic + 1], P[ic + 2]);
+            if (!ray.intersectTriangle(a, b, c, false, hit)) continue;
+            const d = hit.length();
+            if (d < t1) { t2 = t1; tri2 = tri1; t1 = d; tri1 = t; } else if (d < t2) { t2 = d; tri2 = t; }
+          }
+        }
+      }
+      const useT = tri2 >= 0 ? t2 : t1, useTri = tri2 >= 0 ? tri2 : tri1;
+      if (useTri < 0) return last;
+      let water = false;
+      if (pix && uva) {
+        const ia = idx[useTri * 3], ib = idx[useTri * 3 + 1], ic = idx[useTri * 3 + 2];
+        a.set(P[ia * 3], P[ia * 3 + 1], P[ia * 3 + 2]); b.set(P[ib * 3], P[ib * 3 + 1], P[ib * 3 + 2]); c.set(P[ic * 3], P[ic * 3 + 1], P[ic * 3 + 2]);
+        hit.copy(dir).multiplyScalar(useT);
+        ua.fromBufferAttribute(uva, ia); ub.fromBufferAttribute(uva, ib); uc.fromBufferAttribute(uva, ic);
+        THREE.Triangle.getInterpolation(hit, a, b, c, ua, ub, uc, uvHit);
+        const x = Math.min(TW - 1, Math.max(0, Math.floor((uvHit.x % 1 + 1) % 1 * TW)));
+        const y = Math.min(TW - 1, Math.max(0, Math.floor((uvHit.y % 1 + 1) % 1 * TW)));
+        const o = (y * TW + x) * 4;
+        const R = pix[o], G = pix[o + 1], B = pix[o + 2];
+        water = !(G > B + 5 || R > B + 20);           // ląd: zielony lub brązowy; reszta (niebieskie, chmury) = woda
+      }
+      last = { r: useT, water };
+      return last;
+    },
+  };
 }
 
 // Ludzik zbudowany w jednostkach "wysokość ≈ 1.08", stopy na y = 0, patrzy w +Z
@@ -1945,25 +2150,62 @@ const torsoMesh = new THREE.InstancedMesh(torsoGeo, new THREE.MeshLambertMateria
 const headMesh = new THREE.InstancedMesh(headGeo, new THREE.MeshLambertMaterial({ color: MODE3_SKIN_COLOR }), N3);
 for (const m of [legsMesh, torsoMesh, headMesh]) { m.frustumCulled = false; m3Planet.add(m); }
 
+// Ludzik z modelu (person.glb): kopia ze szkieletem + animacja chodu. Zwraca { root, mixer } albo null.
+const personClip = models.person
+  ? (models.person.animations.find(a => a.name.toLowerCase().includes(PERSON_ANIMATION.toLowerCase())) || models.person.animations[0] || null)
+  : null;
+const personBox = models.person ? new THREE.Box3().setFromObject(models.person.scene) : null;
+function makePersonModel(heightM, rnd = Math.random) {
+  if (!models.person) return null;
+  const holder = new THREE.Group();
+  const c = SkeletonUtils.clone(models.person.scene);
+  const h = personBox.max.y - personBox.min.y || 1;
+  const k = heightM / h;
+  c.scale.setScalar(k);
+  c.position.y = -personBox.min.y * k;             // stopy na ziemi
+  c.rotation.y = PERSON_MODEL_YAW_DEG * DEG;
+  c.traverse(o => { if (o.isMesh) o.frustumCulled = false; });
+  holder.add(c);
+  const mixer = new THREE.AnimationMixer(c);
+  if (personClip) {
+    const action = mixer.clipAction(personClip);
+    action.play();
+    action.time = rnd() * personClip.duration;
+  }
+  return { root: holder, mixer };
+}
+
 const people = [];
 {
   const rnd = seededRandom('people');
   const c = new THREE.Color();
-  for (let i = 0; i < N3; i++) {
+  const randomDir = () => {
     const p = new THREE.Vector3(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1);
-    if (p.lengthSq() < 1e-3) p.set(0, 1, 0);
-    p.normalize();
+    return p.lengthSq() < 1e-3 ? p.set(0, 1, 0) : p.normalize();
+  };
+  for (let i = 0; i < N3; i++) {
+    let p = randomDir();
+    for (let k = 0; k < 200 && m3Surface.query(p).water; k++) p = randomDir();   // start na lądzie
     const f = new THREE.Vector3(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1);
     f.addScaledVector(p, -f.dot(p));
     if (f.lengthSq() < 1e-4) f.set(1, 0, 0).addScaledVector(p, -p.x);
     f.normalize();
-    people.push({ p, f, speed: MODE3_PERSON_SPEED_MPS * (0.7 + rnd() * 0.6), turn: 0, phase: rnd() * 6 });
+    const P = { p, f, r: m3Surface.query(p).r, speed: MODE3_PERSON_SPEED_MPS * (0.7 + rnd() * 0.6), turn: 0, phase: rnd() * 6, avoid: 0, checkIn: rnd() * 0.2 };
+    const model = makePersonModel(MODE3_PERSON_HEIGHT_M, rnd);
+    if (model) {
+      P.model = model;
+      model.root.matrixAutoUpdate = false;
+      m3Planet.add(model.root);
+    }
+    people.push(P);
     torsoMesh.setColorAt(i, c.set(MODE3_SHIRT_COLORS[i % MODE3_SHIRT_COLORS.length]));
   }
   torsoMesh.instanceColor.needsUpdate = true;
+  if (models.person) legsMesh.visible = torsoMesh.visible = headMesh.visible = false;
 }
 
 const _right = new THREE.Vector3();
+const _ahead = new THREE.Vector3();
 function updatePeople(dt) {
   const H = MODE3_PERSON_HEIGHT_M / PERSON_UNITS;
   _scale.setScalar(H);
@@ -1974,15 +2216,32 @@ function updatePeople(dt) {
     _q1.setFromAxisAngle(_right, P.speed * dt / M3_R);
     P.p.applyQuaternion(_q1).normalize();
     P.f.applyQuaternion(_q1);
-    // lekkie, losowe skręcanie
-    P.turn = THREE.MathUtils.clamp(P.turn + (Math.random() - 0.5) * MODE3_TURN_NOISE * dt * 4, -1.2, 1.2) * (1 - 0.5 * dt);
+    // przed nami woda? -> skręć w miejscu
+    P.checkIn -= dt;
+    if (MODE3_AVOID_WATER && P.checkIn <= 0) {
+      P.checkIn = 0.2;
+      _q1.setFromAxisAngle(_right, MODE3_PERSON_HEIGHT_M * 2.5 / M3_R);
+      _ahead.copy(P.p).applyQuaternion(_q1);
+      if (P.avoid <= 0 && m3Surface.query(_ahead).water) { P.avoid = 0.8; P.turn = (Math.random() < 0.5 ? -1 : 1) * 3; }
+    }
+    if (P.avoid > 0) P.avoid -= dt;
+    else P.turn = THREE.MathUtils.clamp(P.turn + (Math.random() - 0.5) * MODE3_TURN_NOISE * dt * 4, -1.2, 1.2) * (1 - 0.5 * dt);
     _q1.setFromAxisAngle(P.p, P.turn * dt);
     P.f.applyQuaternion(_q1);
     P.f.addScaledVector(P.p, -P.f.dot(P.p)).normalize();
     P.phase += P.speed * dt / (MODE3_PERSON_HEIGHT_M * 0.35);
+    // wysokość gruntu (góry, doliny) – płynnie
+    P.r += (m3Surface.query(P.p).r - P.r) * Math.min(1, dt * 12);
 
     _right.crossVectors(P.p, P.f);                       // x = prawo, y = góra (od środka planety), z = przód
-    _m1.makeBasis(_right, P.p, P.f).scale(_scale).setPosition(_v1.copy(P.p).multiplyScalar(M3_R));
+    _v1.copy(P.p).multiplyScalar(P.r);
+    if (P.model) {
+      P.model.root.matrix.makeBasis(_right, P.p, P.f).setPosition(_v1);
+      P.model.root.matrixWorldNeedsUpdate = true;
+      P.model.mixer.update(dt * P.speed / MODE3_PERSON_SPEED_MPS);
+      continue;
+    }
+    _m1.makeBasis(_right, P.p, P.f).scale(_scale).setPosition(_v1);
     torsoMesh.setMatrixAt(i, _m1);
     headMesh.setMatrixAt(i, _m1);
     const swing = Math.sin(P.phase) * 0.6;
@@ -1994,6 +2253,7 @@ function updatePeople(dt) {
   legsMesh.instanceMatrix.needsUpdate = true;
   torsoMesh.instanceMatrix.needsUpdate = true;
   headMesh.instanceMatrix.needsUpdate = true;
+  if (MODE3_PLANET_SPIN_DEG_S && !grabs.has(m3Planet) && !floaters.has(m3Planet)) m3Planet.rotateY(MODE3_PLANET_SPIN_DEG_S * DEG * dt);
 }
 
 function layoutMode3() {
@@ -2227,16 +2487,377 @@ function formatLy(millions) {
 }
 
 // =====================================================================
+//  TRYB 6: SKALA – OD BAKTERII DO ZIEMI
+//   state.scaleLog = log10(ile metrów naprawdę odpowiada 1 m w goglach).
+//   Obiekty stoją w rzędzie; zbyt małe i zbyt duże płynnie znikają.
+// =====================================================================
+const mode6Group = new THREE.Group();
+mode6Group.visible = false;
+scene.add(mode6Group);
+const mode6Light = makeHeadlight(mode6Group);
+
+const stdMat = (color, opts = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0, ...opts });
+
+// odcinek (walec) między dwoma punktami
+function beam(a, b, radius, mat, radial = 6) {
+  const dir = new THREE.Vector3().subVectors(b, a);
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, dir.length(), radial, 1), mat);
+  m.position.copy(a).add(b).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(UP, dir.normalize());
+  return m;
+}
+function ellipsoid(mat, sx, sy, sz, x, y, z) {
+  const m = new THREE.Mesh(sphereGeometry, mat);
+  m.scale.set(sx, sy, sz);
+  m.position.set(x, y, z);
+  return m;
+}
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+
+// Każdy model ma rozmiar opisany w SCALE_OBJECTS = 1 jednostka, podstawa na y = 0
+const SCALE_BUILDERS = {
+  bacterium() {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.68, 8, 16), stdMat(0x7cc96b, { roughness: 0.35, emissive: 0x0b2408 }));
+    body.rotation.z = Math.PI / 2;
+    body.position.y = 0.2;
+    g.add(body);
+    const fl = stdMat(0xd8ecd0);
+    for (let k = 0; k < 4; k++) {                       // wici (napęd bakterii)
+      const pts = [];
+      for (let i = 0; i <= 30; i++) {
+        const t = i / 30;
+        pts.push(V(-0.48 - t * 0.7, 0.2 + Math.sin(t * 12 + k * 1.6) * 0.06 + (k - 1.5) * 0.06 * t, Math.cos(t * 12 + k) * 0.06 + (k % 2 - 0.5) * 0.15 * t));
+      }
+      g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.008, 5), fl));
+    }
+    return g;
+  },
+  rbc() {
+    // kształt dwuwklęsły (wzór Evansa–Funga)
+    const pts = [];
+    const N = 28;
+    const z = x => 0.25 * Math.sqrt(Math.max(0, 1 - x * x)) * (0.207161 + 2.002558 * x * x - 1.122762 * x ** 4);
+    for (let i = 0; i <= N; i++) { const x = i / N; pts.push(new THREE.Vector2(x * 0.5, z(x))); }
+    for (let i = N; i >= 0; i--) { const x = i / N; pts.push(new THREE.Vector2(x * 0.5, -z(x))); }
+    const m = new THREE.Mesh(new THREE.LatheGeometry(pts, 48), stdMat(0xb3202a, { roughness: 0.45, side: THREE.DoubleSide }));
+    m.rotation.x = 1.1;
+    m.position.y = 0.46;
+    const g = new THREE.Group();
+    g.add(m);
+    return g;
+  },
+  hair() {
+    const [canvas, ctx] = makeCanvas(64, 256);
+    ctx.fillStyle = '#4a3020'; ctx.fillRect(0, 0, 64, 256);
+    for (let y = 0; y < 256; y += 9) {                  // łuski włosa jak dachówki
+      ctx.strokeStyle = 'rgba(20,10,5,0.6)'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let x = 0; x <= 64; x += 4) ctx.lineTo(x, y + Math.sin(x * 0.2 + y) * 2.5);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(160,120,90,0.25)'; ctx.fillRect(0, y + 2, 64, 3);
+    }
+    const tex = canvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(2, 3);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.083, 0.086, 1, 28, 1), stdMat(0xffffff, { map: tex, roughness: 0.5 }));
+    m.position.y = 0.5;
+    m.rotation.z = 0.12;
+    const g = new THREE.Group();
+    g.add(m);
+    return g;
+  },
+  ant() {
+    const g = new THREE.Group();
+    const mat = stdMat(0x2a1810, { roughness: 0.3 });
+    g.add(ellipsoid(mat, 0.17, 0.14, 0.22, 0, 0.21, -0.3), ellipsoid(mat, 0.045, 0.045, 0.06, 0, 0.18, -0.06),
+      ellipsoid(mat, 0.07, 0.07, 0.16, 0, 0.19, 0.06), ellipsoid(mat, 0.1, 0.09, 0.1, 0, 0.22, 0.3));
+    for (const sx of [-1, 1]) {
+      for (let k = 0; k < 3; k++) {
+        const z = -0.02 + k * 0.08;
+        const hip = V(sx * 0.05, 0.17, z), knee = V(sx * 0.2, 0.28, z + (k - 1) * 0.1), foot = V(sx * 0.32, 0.0, z + (k - 1) * 0.22);
+        g.add(beam(hip, knee, 0.012, mat), beam(knee, foot, 0.01, mat));
+      }
+      const a0 = V(sx * 0.04, 0.27, 0.36), a1 = V(sx * 0.1, 0.4, 0.42), a2 = V(sx * 0.17, 0.33, 0.56);
+      g.add(beam(a0, a1, 0.008, mat), beam(a1, a2, 0.007, mat));
+    }
+    return g;
+  },
+  hamster() {
+    const g = new THREE.Group();
+    const fur = stdMat(0xd8964e, { roughness: 0.9 }), belly = stdMat(0xf5e6d0, { roughness: 0.9 });
+    const pink = stdMat(0xf0a0a8), black = stdMat(0x111111, { roughness: 0.2 });
+    g.add(ellipsoid(fur, 0.32, 0.28, 0.42, 0, 0.29, -0.02), ellipsoid(belly, 0.26, 0.2, 0.34, 0, 0.22, 0.04),
+      ellipsoid(fur, 0.24, 0.22, 0.22, 0, 0.36, 0.3));
+    for (const sx of [-1, 1]) {
+      g.add(ellipsoid(belly, 0.12, 0.1, 0.12, sx * 0.14, 0.3, 0.36),          // policzki
+        ellipsoid(fur, 0.065, 0.075, 0.03, sx * 0.13, 0.56, 0.24), ellipsoid(pink, 0.045, 0.055, 0.02, sx * 0.13, 0.56, 0.26),
+        ellipsoid(black, 0.035, 0.035, 0.03, sx * 0.1, 0.42, 0.49),
+        ellipsoid(pink, 0.06, 0.03, 0.08, sx * 0.16, 0.03, 0.22), ellipsoid(pink, 0.06, 0.03, 0.08, sx * 0.17, 0.03, -0.25));
+    }
+    g.add(ellipsoid(pink, 0.03, 0.025, 0.025, 0, 0.37, 0.53));
+    return g;
+  },
+  human() {
+    const model = makePersonModel(1);
+    if (model) { model.root.userData.mixer = model.mixer; return model.root; }
+    const g = new THREE.Group();
+    const skin = stdMat(0xf0c8a0), shirt = stdMat(0x3a78c8), pants = stdMat(0x2c3e50), hair = stdMat(0x3a2a1a), shoe = stdMat(0x222222);
+    for (const sx of [-1, 1]) {
+      g.add(beam(V(sx * 0.06, 0.48, 0), V(sx * 0.07, 0.04, 0.01), 0.045, pants, 10));
+      g.add(ellipsoid(shoe, 0.045, 0.03, 0.08, sx * 0.07, 0.03, 0.03));
+      g.add(beam(V(sx * 0.16, 0.8, 0), V(sx * 0.2, 0.48, 0.02), 0.035, shirt, 10));
+      g.add(ellipsoid(skin, 0.035, 0.045, 0.035, sx * 0.205, 0.44, 0.02));
+    }
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.24, 6, 12), shirt);
+    torso.position.y = 0.64;
+    g.add(torso, ellipsoid(skin, 0.075, 0.09, 0.08, 0, 0.9, 0), ellipsoid(hair, 0.08, 0.05, 0.085, 0, 0.96, -0.01));
+    return g;
+  },
+  eiffel() {
+    const g = new THREE.Group();
+    const mat = stdMat(0x6e5a3e, { roughness: 0.8, metalness: 0.2 });
+    const w = h => 0.19 * Math.exp(-3.16 * h);           // połowa szerokości wieży na wysokości h
+    const levels = [0, 0.06, 0.12, 0.173, 0.23, 0.29, 0.35, 0.45, 0.55, 0.65, 0.75, 0.84];
+    const corner = (h, sx, sz) => V(sx * w(h), h, sz * w(h));
+    const linePts = [];
+    for (let i = 0; i < levels.length - 1; i++) {
+      const h0 = levels[i], h1 = levels[i + 1];
+      for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) g.add(beam(corner(h0, sx, sz), corner(h1, sx, sz), 0.004 + 0.012 * (1 - h0), mat));
+      const c0 = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => corner(h0, a, b));
+      const c1 = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => corner(h1, a, b));
+      for (let k = 0; k < 4; k++) {                      // kratownica: poziomy i krzyże na każdej ścianie
+        const n = (k + 1) % 4;
+        if (h0 > 0.15) linePts.push(c0[k], c0[n]);
+        linePts.push(c0[k], c1[n], c0[n], c1[k]);
+      }
+    }
+    g.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(linePts), new THREE.LineBasicMaterial({ color: 0x9a8058 })));
+    for (const [h, t] of [[0.173, 0.012], [0.35, 0.01], [0.84, 0.008]]) {
+      const plat = new THREE.Mesh(new THREE.BoxGeometry(2 * w(h) + 0.03, t, 2 * w(h) + 0.03), mat);
+      plat.position.y = h;
+      g.add(plat);
+    }
+    for (let k = 0; k < 4; k++) {                        // łuki między nogami
+      const arch = new THREE.Mesh(new THREE.TorusGeometry(0.135, 0.006, 6, 24, Math.PI), mat);
+      arch.position.y = 0.0;
+      arch.rotation.y = k * Math.PI / 2;
+      arch.translateZ(w(0.06));
+      g.add(arch);
+    }
+    g.add(beam(V(0, 0.84, 0), V(0, 1, 0), 0.004, mat));
+    return g;
+  },
+  everest() {
+    const geo = new THREE.ConeGeometry(0.75, 1, 64, 20).translate(0, 0.5, 0);
+    const p = geo.attributes.position;
+    const colors = [];
+    const rnd = seededRandom('everest');
+    const ph = Array.from({ length: 4 }, () => rnd() * 6);
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const a = Math.atan2(z, x);
+      const n = 0.22 * Math.sin(a * 3 + ph[0]) + 0.12 * Math.sin(a * 7 + ph[1] + y * 6) + 0.06 * Math.sin(a * 17 + ph[2]);
+      const k = y < 0.995 ? 1 + n * (1 - y) : 1;
+      p.setXYZ(i, x * k, y + (y > 0.02 && y < 0.99 ? 0.02 * Math.sin(a * 11 + ph[3]) : 0), z * k);
+      const snow = y > 0.55 + 0.08 * Math.sin(a * 5);
+      const c = snow ? [0.95, 0.96, 1] : y > 0.25 ? [0.45, 0.43, 0.41] : [0.38, 0.33, 0.27];
+      const j = 0.9 + rnd() * 0.15;
+      colors.push(c[0] * j, c[1] * j, c[2] * j);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geo.computeVertexNormals();
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(geo, stdMat(0xffffff, { vertexColors: true, flatShading: true, roughness: 0.95 })));
+    return g;
+  },
+  earth() {
+    const def = BODIES.find(b => b.id === 'earth');
+    const v = models.earth ? buildEarthModel(0.5) : buildPlanetVisual(def, 0.5, null);
+    v.group.position.y = 0.5;
+    v.group.rotation.z = 23.44 * DEG;
+    const g = new THREE.Group();
+    g.add(v.group);
+    return g;
+  },
+};
+
+const scaleItems = [];
+{
+  let prevExtent = 0, x = 0;
+  for (const def of SCALE_OBJECTS) {
+    const model = (SCALE_BUILDERS[def.id] || SCALE_BUILDERS.hamster)();
+    const holder = new THREE.Group();                  // pozycja i skala (zmieniają się przy zoomie)
+    const turn = new THREE.Group();                    // powolny obrót
+    turn.add(model);
+    holder.add(turn);
+    mode6Group.add(holder);
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const mats = new Set();
+    model.traverse(o => {
+      if (!o.material) return;
+      if (o.isMesh && models.earth && def.id === 'earth') o.material = o.material.clone();
+      o.material.transparent = true;                 // do płynnego znikania
+      mats.add(o.material);
+      o.frustumCulled = false;
+    });
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const extent = def.sizeM * maxDim;
+    x += prevExtent ? (prevExtent + extent) * (0.5 + SCALE_ROW_GAP * 0.5) : 0;
+    prevExtent = extent;
+    const label = makeLabel(`${def.name} · ${def.sizeText}`);
+    const info = makeInfoLabel({ name: def.name, info: { rows: [['Rozmiar', def.sizeText]], fact: def.fact } });
+    mode6Group.add(label, info);
+    scaleItems.push({
+      def, holder, turn, mats: [...mats], maxDim, height: size.y, x, label, info, alpha: 1,
+      focusLog: Math.log10(extent / SCALE_FOCUS_SIZE_M), mixer: model.userData.mixer || null,
+    });
+  }
+}
+// Napis "1 m tutaj = ... naprawdę" (aktualizowany kilka razy na sekundę)
+const scaleRuler = (() => {
+  const [canvas, ctx] = makeCanvas(1024, 112);
+  const tex = canvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  sprite.center.set(0.5, 1);
+  sprite.userData.aspect = 1024 / 112;
+  sprite.renderOrder = 12;
+  mode6Group.add(sprite);
+  let lastText = '';
+  return {
+    sprite,
+    setText(text) {
+      if (text === lastText) return;
+      lastText = text;
+      ctx.clearRect(0, 0, 1024, 112);
+      ctx.fillStyle = 'rgba(8,12,28,0.75)'; roundRect(ctx, 0, 0, 1024, 112, 30); ctx.fill();
+      ctx.fillStyle = '#ffe9a8'; ctx.font = 'bold 54px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(text, 512, 58);
+      tex.needsUpdate = true;
+    },
+  };
+})();
+
+const m6Origin = new THREE.Vector3(), m6Fwd = new THREE.Vector3(0, 0, -1), m6Right = new THREE.Vector3(1, 0, 0);
+state.scaleLog = scaleItems.find(it => it.def.id === 'human').focusLog;
+state.scaleSpeed = SCALE_SPEED_DEFAULT;
+state.scaleAnim = null;
+const scaleLogMin = scaleItems[0].focusLog - 1, scaleLogMax = scaleItems[scaleItems.length - 1].focusLog + 1;
+
+function layoutMode6() {
+  m6Fwd.copy(horizontalForward());
+  m6Right.crossVectors(m6Fwd, UP).normalize();
+  m6Origin.set(eyePos.x, 0, eyePos.z);
+  state.scaleAnim = null;
+  state.scaleLog = scaleItems.find(it => it.def.id === 'human').focusLog;
+  if (!renderer.xr.isPresenting) orbitControls.target.copy(m6Origin).addScaledVector(m6Fwd, SCALE_DISTANCE_M + 0.3).setY(SCALE_BASELINE_Y_M + 0.3);
+}
+
+// Środek rzędu płynnie przechodzi od obiektu do obiektu wraz z zoomem
+function scaleCenterX(L) {
+  const it = scaleItems;
+  if (L <= it[0].focusLog) return it[0].x;
+  for (let i = 0; i < it.length - 1; i++) {
+    if (L < it[i + 1].focusLog) {
+      const t = (L - it[i].focusLog) / (it[i + 1].focusLog - it[i].focusLog);
+      return THREE.MathUtils.lerp(it[i].x, it[i + 1].x, smooth(t));
+    }
+  }
+  return it[it.length - 1].x;
+}
+
+function nearestScaleItem(L = state.scaleLog) {
+  let best = scaleItems[0];
+  for (const it of scaleItems) if (Math.abs(it.focusLog - L) < Math.abs(best.focusLog - L)) best = it;
+  return best;
+}
+
+function scaleJump(dir) {
+  const L = state.scaleAnim ? state.scaleAnim.to : state.scaleLog;
+  const list = dir > 0 ? scaleItems.filter(it => it.focusLog > L + 0.05) : scaleItems.filter(it => it.focusLog < L - 0.05).reverse();
+  if (!list.length) return;
+  const to = list[0].focusLog;
+  state.scaleAnim = { from: state.scaleLog, to, t: 0, dur: Math.max(0.7, Math.abs(to - state.scaleLog) / state.scaleSpeed) };
+}
+
+function scaleZoom(amountDecades) {
+  state.scaleAnim = null;
+  state.scaleLog = THREE.MathUtils.clamp(state.scaleLog + amountDecades, scaleLogMin, scaleLogMax);
+}
+
+function setScaleSpeedFromFraction(f) {
+  f = THREE.MathUtils.clamp(f, 0, 1);
+  state.scaleSpeed = SCALE_SPEED_MIN * Math.pow(SCALE_SPEED_MAX / SCALE_SPEED_MIN, f);
+  drawMenu();
+}
+
+function formatMeters(m) {
+  const units = [[1e3, 'km'], [1, 'm'], [1e-2, 'cm'], [1e-3, 'mm'], [1e-6, 'µm'], [1e-9, 'nm']];
+  for (const [u, name] of units) {
+    if (m >= u * 0.999) return `${(m / u).toLocaleString('pl-PL', { maximumSignificantDigits: 3 })} ${name}`;
+  }
+  return `${m.toExponential(2)} m`;
+}
+
+function updateScaleMode(dt) {
+  const a = state.scaleAnim;
+  if (a) {
+    a.t = Math.min(1, a.t + dt / a.dur);
+    state.scaleLog = THREE.MathUtils.lerp(a.from, a.to, smooth(a.t));
+    if (a.t >= 1) state.scaleAnim = null;
+  }
+  const L = state.scaleLog, F = Math.pow(10, L);
+  const xc = scaleCenterX(L);
+  const lnFade = Math.log(SCALE_FADE_FACTOR);
+  const current = nearestScaleItem(L);
+  const nearFocus = Math.abs(current.focusLog - L) < 0.2 && !state.scaleAnim;
+  for (const it of scaleItems) {
+    const d = it.def.sizeM / F;                         // skala modelu (1 jednostka = d metrów w goglach)
+    const extent = d * it.maxDim;
+    let alpha = Math.min(1, Math.log(extent / SCALE_HIDE_SMALL_M) / lnFade, Math.log(SCALE_HIDE_LARGE_M / extent) / lnFade);
+    const xoff = (it.x - xc) / F;
+    if (Math.abs(xoff) > 300) alpha = 0;
+    const visible = alpha > 0.01;
+    it.holder.visible = visible;
+    it.label.visible = visible && alpha > 0.3 && !(nearFocus && it === current);
+    it.info.visible = visible && nearFocus && it === current;
+    if (!visible) continue;
+    if (Math.abs(alpha - it.alpha) > 0.01) {
+      for (const m of it.mats) m.opacity = alpha;
+      it.alpha = alpha;
+    }
+    it.holder.scale.setScalar(d);
+    it.holder.position.copy(m6Origin).addScaledVector(m6Right, xoff).addScaledVector(m6Fwd, SCALE_DISTANCE_M + extent / 2);
+    it.holder.position.y = SCALE_BASELINE_Y_M;
+    it.turn.rotation.y += SCALE_TURN_DEG_S * DEG * dt;
+    if (it.mixer) it.mixer.update(dt);
+    const top = _v1.copy(it.holder.position);
+    if (it.label.visible) placeLabel(it.label, top, it.height * d * 1.05, LABEL_ANGLE_DEG * 1.2);
+    if (it.info.visible) placeLabel(it.info, top, it.height * d * 1.05, INFO_LABEL_ANGLE_DEG * 0.8);
+  }
+  scaleRuler.setText(`1 m w goglach = ${formatMeters(F)} naprawdę`);
+  const rp = _v2.copy(m6Origin).addScaledVector(m6Fwd, SCALE_DISTANCE_M * 0.85);
+  rp.y = SCALE_BASELINE_Y_M - 0.04;
+  const h = Math.max(0.05, rp.distanceTo(eyePos)) * Math.tan(1.8 * DEG);
+  scaleRuler.sprite.position.copy(rp);
+  scaleRuler.sprite.scale.set(h * scaleRuler.sprite.userData.aspect, h, 1);
+}
+
+// =====================================================================
 //  MENU (panel z przyciskami, rysowany na canvas) – przesuwane i chowane
 // =====================================================================
 const MENU_CANVAS_W = 1024, MENU_CANVAS_H = 470;
 const MENU_USED_H = 460;
 const MENU_HEIGHT_M = MENU_WIDTH_M * MENU_CANVAS_H / MENU_CANVAS_W;
-const MODE_NAMES = { 1: 'Model', 2: 'Planety', 3: 'Ludziki', 4: 'Obiekty', 5: 'Kosmos' };
+const MODE_NAMES = { 1: 'Model', 2: 'Planety', 3: 'Ludziki', 4: 'Obiekty', 5: 'Kosmos', 6: 'Skala' };
 const menuButtons = [
   { id: 'hide', label: 'Schowaj ✕', x: 760, y: 18, w: 246, h: 70, small: true },
-  ...[1, 2, 3, 4, 5].map(m => ({ id: 'mode' + m, label: 'Tryb ' + m, sub: MODE_NAMES[m], x: 18 + (m - 1) * 200, y: 196, w: 188, h: 120 })),
-  { id: 'reset', label: 'Reset', x: 18, y: 332, w: 300, h: 112 },
+  ...[1, 2, 3, 4, 5, 6].map(m => ({ id: 'mode' + m, label: 'Tryb ' + m, sub: MODE_NAMES[m], x: 18 + (m - 1) * 168, y: 196, w: 156, h: 120 })),
+  { id: 'reset', label: 'Reset', x: 18, y: 332, w: 300, h: 112, modes: [1, 2, 3, 4, 5] },
+  { id: 'prev', label: '◀ Mniejszy (B)', x: 18, y: 332, w: 262, h: 112, modes: [6], small: true },
+  { id: 'speed', slider: true, x: 292, y: 332, w: 440, h: 112, modes: [6] },
+  { id: 'next', label: 'Większy (A) ▶', x: 744, y: 332, w: 262, h: 112, modes: [6], small: true },
   { id: 'knife', label: () => state.knife ? 'Nóż: WŁ (A)' : 'Nóż: wył (A)', x: 330, y: 332, w: 340, h: 112, modes: [2, 4] },
   { id: 'glue', label: 'Sklej (B)', x: 682, y: 332, w: 324, h: 112, modes: [2, 4] },
 ];
@@ -2246,6 +2867,7 @@ const MENU_HINTS = {
   3: 'Spust/grip: obracaj planetę (puść w ruchu – kręci się) · 2 ręce: skaluj',
   4: 'Obiekty NIE w skali – prawdziwe rozmiary na tabliczkach · A: nóż · B: sklej',
   5: 'Spust/grip: chwyć Wszechświat · 2 ręce: zmniejsz i zobacz sieć kosmiczną',
+  6: 'Gałka: płynny zoom · A/B: skok do większego/mniejszego · suwak: prędkość',
 };
 const [menuCanvas, menuCtx] = makeCanvas(MENU_CANVAS_W, MENU_CANVAS_H);
 const menuTexture = canvasTexture(menuCanvas);
@@ -2303,6 +2925,16 @@ function drawMenu() {
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    if (b.slider) {                                   // suwak prędkości zoomu (Tryb 6)
+      const f = Math.log(state.scaleSpeed / SCALE_SPEED_MIN) / Math.log(SCALE_SPEED_MAX / SCALE_SPEED_MIN);
+      const x0 = b.x + 30, x1 = b.x + b.w - 30, yT = b.y + 80;
+      ctx.font = 'bold 30px system-ui, sans-serif';
+      ctx.fillText(`Prędkość zoomu: ×10 w ${(1 / state.scaleSpeed).toLocaleString('pl-PL', { maximumFractionDigits: 1 })} s`, b.x + b.w / 2, b.y + 34);
+      ctx.fillStyle = '#1a2340'; roundRect(ctx, x0, yT - 7, x1 - x0, 14, 7); ctx.fill();
+      ctx.fillStyle = '#7fb0ff'; roundRect(ctx, x0, yT - 7, (x1 - x0) * f, 14, 7); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(x0 + (x1 - x0) * f, yT, 18, 0, Math.PI * 2); ctx.fill();
+      continue;
+    }
     const label = typeof b.label === 'function' ? b.label() : b.label;
     ctx.font = b.small ? 'bold 34px system-ui, sans-serif' : 'bold 40px system-ui, sans-serif';
     ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 - (b.sub ? 18 : 0));
@@ -2330,6 +2962,9 @@ function onMenuButton(button) {
     case 'mode3': setMode(3); break;
     case 'mode4': setMode(4); break;
     case 'mode5': setMode(5); break;
+    case 'mode6': setMode(6); break;
+    case 'prev': scaleJump(-1); break;
+    case 'next': scaleJump(1); break;
     case 'reset': resetCurrentMode(); break;
     case 'knife': setKnife(!state.knife); break;
     case 'glue': glueAll(shelfFor(state.mode)); break;
@@ -2357,6 +2992,7 @@ function setMode(mode) {
   mode3Group.visible = mode === 3;
   shelf4.group.visible = mode === 4;
   mode5Group.visible = mode === 5;
+  mode6Group.visible = mode === 6;
   stars.visible = mode !== 5;                        // w przestrzeni międzygalaktycznej nie ma pobliskich gwiazd
   if (!state.placed[mode]) { layoutMode(mode); state.placed[mode] = true; }
   else if (!renderer.xr.isPresenting) focusOrbitOnMode(mode);
@@ -2369,12 +3005,21 @@ function layoutMode(mode) {
   if (mode === 3) layoutMode3();
   if (mode === 4) layoutShelf4();
   if (mode === 5) layoutMode5();
+  if (mode === 6) layoutMode6();
+}
+
+// Suwak: pozycja trafienia na pasku -> prędkość
+function sliderFromUV(uv) {
+  const b = menuButtons.find(x => x.id === 'speed');
+  const x = uv.x * MENU_CANVAS_W;
+  setScaleSpeedFromFraction((x - (b.x + 30)) / (b.w - 60));
 }
 
 // PC: przy powrocie do trybu obracaj kamerę wokół jego środka
 function focusOrbitOnMode(mode) {
   if (mode === 1) orbitControls.target.copy(systemGroup.position);
   if (mode === 3) orbitControls.target.copy(m3Planet.position);
+  if (mode === 6) orbitControls.target.copy(m6Origin).addScaledVector(m6Fwd, SCALE_DISTANCE_M + 0.3).setY(SCALE_BASELINE_Y_M + 0.3);
   const shelf = shelfFor(mode);
   if (shelf) {
     const c = new THREE.Vector3();
@@ -2526,6 +3171,7 @@ function onPressStart(ctrl, source) {
   if (ui) {                                     // interfejs ma pierwszeństwo przed chwytaniem
     ctrl.userData.uiPress = source;
     if (ui.kind === 'tab') setMenuHidden(false);
+    else if (ui.button && ui.button.id === 'speed') { state.sliderCtrl = ctrl; sliderFromUV(ui.hit.uv); }
     else if (ui.button) { if (source === 'select') onMenuButton(ui.button); }
     else if (startGrab(menuMesh, ctrl, MENU_GRAB)) ctrl.userData.grabSource = source;   // tło panelu = uchwyt
     return;
@@ -2547,7 +3193,10 @@ function onPressStart(ctrl, source) {
 }
 
 function onPressEnd(ctrl, source) {
-  if (ctrl.userData.uiPress === source) ctrl.userData.uiPress = null;
+  if (ctrl.userData.uiPress === source) {
+    ctrl.userData.uiPress = null;
+    if (state.sliderCtrl === ctrl) state.sliderCtrl = null;
+  }
   if (ctrl.userData.grabTarget && ctrl.userData.grabSource === source) {
     ctrl.userData.grabSource = null;
     endGrab(ctrl);
@@ -2576,6 +3225,17 @@ function onButtonDown(ctrl, index) {
   }
   if (shelfFor(state.mode) && hand === 'right' && index === KNIFE_BUTTON) setKnife(!state.knife);
   if (shelfFor(state.mode) && hand === 'right' && index === RESET_BUTTON) glueAll(shelfFor(state.mode));
+  if (state.mode === 6 && hand === 'right' && index === KNIFE_BUTTON) scaleJump(1);
+  if (state.mode === 6 && hand === 'right' && index === RESET_BUTTON) scaleJump(-1);
+}
+
+// Gałka w Trybie 6: płynna zmiana skali (w górę = przybliżanie)
+function stickScale(ctrl, dt) {
+  const gp = ctrl.userData.inputSource && ctrl.userData.inputSource.gamepad;
+  if (!gp || gp.axes.length <= ZOOM_STICK_AXIS) return;
+  const y = gp.axes[ZOOM_STICK_AXIS];
+  if (Math.abs(y) < STICK_DEADZONE) return;
+  scaleZoom(y * state.scaleSpeed * dt);
 }
 
 // Gałka: płynny zoom układu wokół dłoni (Tryb 1)
@@ -2610,6 +3270,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   setRayFromMouse(e);
   const ui = raycastUI();
   if (ui && ui.kind === 'tab') setMenuHidden(false);
+  else if (ui && ui.button && ui.button.id === 'speed') sliderFromUV(ui.hit.uv);
   else if (ui && ui.button) onMenuButton(ui.button);
 });
 renderer.domElement.addEventListener('dblclick', e => {
@@ -2626,6 +3287,14 @@ window.addEventListener('keydown', e => {
   if (key === 'm') setMenuHidden(!state.menuHidden);
   if (state.mode === 1 && (e.key === '+' || e.key === '=')) zoomSystemAround(orbitControls.target.clone(), 2);
   if (state.mode === 1 && e.key === '-') zoomSystemAround(orbitControls.target.clone(), 0.5);
+  if (state.mode === 6) {
+    if (e.key === '+' || e.key === '=') scaleZoom(-0.25);
+    if (e.key === '-') scaleZoom(0.25);
+    if (key === 'n') scaleJump(1);
+    if (key === 'p') scaleJump(-1);
+    if (key === ']') setScaleSpeedFromFraction(Math.log(state.scaleSpeed * 1.5 / SCALE_SPEED_MIN) / Math.log(SCALE_SPEED_MAX / SCALE_SPEED_MIN));
+    if (key === '[') setScaleSpeedFromFraction(Math.log(state.scaleSpeed / 1.5 / SCALE_SPEED_MIN) / Math.log(SCALE_SPEED_MAX / SCALE_SPEED_MIN));
+  }
   const shelf = shelfFor(state.mode);
   if (!shelf) return;
   if (key === 'g') glueAll(shelf);
@@ -2700,8 +3369,10 @@ function updateStatus(time) {
     text = `Nóż: ${state.knife ? 'WŁĄCZONY' : 'wyłączony'}  ·  ${extra}  ·  ${state.fps} FPS`;
   } else if (mode === 3) {
     text = `Skala ×${m3Planet.scale.x.toFixed(2)}  ·  ⌀ planety ${formatLength(MODE3_PLANET_DIAMETER_M * m3Planet.scale.x)}  ·  ${state.fps} FPS`;
-  } else {
+  } else if (mode === 5) {
     text = `1 m = ${formatLy(LY_MILLIONS_PER_M / universe.scale.x)} lat świetlnych  ·  galaktyk: ${galaxies.length}  ·  ${state.fps} FPS`;
+  } else {
+    text = `1 m w goglach = ${formatMeters(Math.pow(10, state.scaleLog))}  ·  ${nearestScaleItem().def.name}  ·  ${state.fps} FPS`;
   }
   if (text !== state.status && time - statusTime > 250) {
     state.status = text;
@@ -2760,6 +3431,7 @@ renderer.setAnimationLoop((time, frame) => {
     grip.updateMatrixWorld(true);
     pollButtons(ctrl);
     if (state.mode === 1 && presenting) stickZoom(ctrl, dt);
+    if (state.mode === 6 && presenting) stickScale(ctrl, dt);
     const knifeHand = isKnifeHand(ctrl);
     ctrl.userData.ray.visible = presenting && !knifeHand;
     ctrl.userData.rayDot.visible = false;
@@ -2795,6 +3467,11 @@ renderer.setAnimationLoop((time, frame) => {
     }
   }
   state.hoverBody = hoverBody;
+  if (state.sliderCtrl) {                            // przeciąganie suwaka prędkości
+    setRayFromController(state.sliderCtrl);
+    const ui = raycastUI();
+    if (ui && ui.kind === 'menu') sliderFromUV(ui.hit.uv);
+  }
   if (hovered !== state.hoveredButton) { state.hoveredButton = hovered; drawMenu(); }
 
   updateFocus(dt);
@@ -2816,8 +3493,11 @@ renderer.setAnimationLoop((time, frame) => {
   } else if (state.mode === 3) {
     updatePeople(dt);
     updateHeadlight(mode3Light);
-  } else {
+  } else if (state.mode === 5) {
     updateGalaxies(dt);
+  } else {
+    updateScaleMode(dt);
+    updateHeadlight(mode6Light);
   }
   if (!shelf) cutPreview.visible = knife.visible = false;
 
@@ -2835,4 +3515,5 @@ window.solar = {
   shelf2, shelf4, m3Planet, people, universe, galaxies, cosmos, menuMesh, menuTab, floaters, controllers,
   setMode, startFocus, cutItem, glueAll, startGrab, endGrab, updateGrabs, grabs, zoomSystemAround,
   setKnife, updateKnife, tryKnifeCut, grabShelf, setMenuHidden, onPressStart, onPressEnd,
+  models, scaleItems, scaleJump, scaleZoom, m3Surface, layoutMode,
 };
