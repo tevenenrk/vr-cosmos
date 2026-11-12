@@ -19,6 +19,7 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // =====================================================================
 //  KONFIGURACJA
@@ -184,7 +185,8 @@ const MODE3_PERSON_SPEED_MPS = 0.015;  // prędkość marszu przy skali 1 [m/s]
 const MODE3_TURN_NOISE = 1.5;          // jak bardzo ludziki skręcają losowo (0 = idą prosto)
 const MODE3_AVOID_WATER = true;        // ludziki omijają morza (planeta z modelu: wykrywanie po kolorze tekstury)
 const MODE3_PLANET_SPIN_DEG_S = 0;     // samodzielny obrót planety [stopnie/s] (0 = stoi)
-const MODE3_SCALE_MIN = 0.3;           // minimalna skala planety
+const MODE3_PULL_GAP_M = 0.15;         // planeta przyciągnięta promieniem zatrzymuje się tyle przed dłonią [m]
+const MODE3_SCALE_MIN = 0.1;           // minimalna skala planety
 const MODE3_SCALE_MAX = 40;            // maksymalna skala (40 m planeta, ludzik 40 cm)
 const MODE3_OCEAN_COLOR = '#2a62b8';
 const MODE3_LAND_COLORS = ['#4f9a3c', '#6aa84f', '#8c9a4a', '#a58d5a'];
@@ -193,19 +195,18 @@ const MODE3_PANTS_COLOR = 0x2c3e50;
 const MODE3_SKIN_COLOR = 0xf0c8a0;
 
 // --- Tryb 5: kosmos – galaktyki i sieć kosmiczna --------------------------
-const LY_MILLIONS_PER_M = 1;           // skala: 1 m = 1 mln lat świetlnych (Droga Mleczna ma wtedy 10 cm)
-const GALAXY_COUNT = 240;              // liczba galaktyk wokół Ciebie (rysowane jako obrazki – tanie)
-const GALAXY_FIELD_RADIUS_M = 11;      // w takiej kuli wokół Ciebie latają galaktyki [m]
-const GALAXY_SIZE_MIN_M = 0.06;        // najmniejsza galaktyka (średnica) [m] (powiększone dla efektu; Droga Mleczna ma prawdziwe 10 cm)
-const GALAXY_SIZE_MAX_M = 0.45;        // największa galaktyka [m]
-const GALAXY_DRIFT_MPS = 0.03;         // prędkość dryfu galaktyk [m/s]
-const GALAXY_FILAMENT_SHARE = 0.65;    // jaka część galaktyk leży wzdłuż "Twojego" włókna
-const WEB_NODE_COUNT = 40;             // węzły sieci kosmicznej (gromady galaktyk)
-const WEB_RADIUS_M = 230;              // zasięg sieci kosmicznej [m]
-const WEB_POINT_COUNT = 30000;         // liczba punktów tworzących włókna (każdy = daleka galaktyka)
-const WEB_FILAMENT_WIDTH_M = 3.5;      // grubość włókien [m]
-const UNIVERSE_SCALE_MIN = 0.02;       // zmniejszenie: cała sieć mieści się w pokoju
-const UNIVERSE_SCALE_MAX = 20;
+const LY_MILLIONS_PER_M = 1;           // skala: 1 m = 1 mln lat świetlnych (Droga Mleczna ma 10 cm, Andromeda jest 2,5 m dalej)
+const GALAXY_COUNT = 700;              // liczba galaktyk wokół Ciebie (obrazki na kilku "instancjach" – tanie)
+const GALAXY_MIN_DIST_M = 0.5;         // najbliższa galaktyka (żeby nie wchodziła w twarz) [m]
+const GALAXY_FIELD_RADIUS_M = 14;      // w takiej kuli wokół Ciebie latają galaktyki [m]
+const GALAXY_NEAR_DENSITY = 1.6;       // >1 = więcej galaktyk blisko Ciebie
+const GALAXY_SIZE_MIN_M = 0.04;        // najmniejsza galaktyka (średnica) [m] (gęstość i rozmiary powiększone dla efektu)
+const GALAXY_SIZE_MAX_M = 0.5;         // największa galaktyka [m]
+const GALAXY_DRIFT_MPS = 0.02;         // prędkość dryfu galaktyk [m/s]
+const WEB_SKY_RADIUS_M = 500;          // tło: sfera z obrazem sieci kosmicznej [m]
+const WEB_TEXTURE_WIDTH = 4096;        // rozdzielczość tła (szerokość; wysokość = połowa). 2048 = szybciej, mniej ostro
+const WEB_NODE_COUNT = 90;             // gromady galaktyk na tle
+const WEB_POINT_COUNT = 90000;         // punkty (dalekie galaktyki) tworzące włókna na tle
 
 // --- Tryb 6: skala – od bakterii do Ziemi --------------------------------------
 const SCALE_FOCUS_SIZE_M = 0.6;      // obiekt "w centrum uwagi" ma w goglach taki rozmiar [m]
@@ -217,19 +218,41 @@ const SCALE_FADE_FACTOR = 2.5;       // płynne znikanie w przedziale ×2,5
 const SCALE_SPEED_DEFAULT = 0.8;     // prędkość zoomu: ile rzędów wielkości (×10) na sekundę
 const SCALE_SPEED_MIN = 0.1;
 const SCALE_SPEED_MAX = 4;
-const SCALE_ROW_GAP = 0.7;           // odstęp między obiektami w rzędzie (w ich rozmiarach)
+const SCALE_GAP_DEG = 5;              // odstęp kątowy między sąsiednimi obiektami na łuku (mniejsze z lewej, większe z prawej)
+const SCALE_DEPTH_FACTOR = 0.8;       // większe obiekty stoją dalej: odległość = SCALE_DISTANCE_M + rozmiar × to
+const SCALE_NEIGHBORS = 2.6;          // ile obiektów w każdą stronę widać jednocześnie
 const SCALE_TURN_DEG_S = 10;         // obiekty powoli obracają się, by pokazać kształt
-// sizeM = rozmiar w metrach (wymiar podany w sizeText); kolejność: od najmniejszego
+// sizeM = rozmiar w metrach (wymiar opisany w sizeText); kolejność od najmniejszego.
+// Kolejne obiekty różnią się najwyżej ~30×, więc zawsze widać trzy porównywalne obok siebie.
 const SCALE_OBJECTS = [
+  { id: 'atom', name: 'Atom wodoru', sizeM: 1e-10, sizeText: 'średnica ok. 0,1 nm', fact: 'Gdyby atom był wielkości stadionu, jego jądro byłoby ziarnkiem grochu.' },
+  { id: 'glucose', name: 'Cząsteczka glukozy', sizeM: 9e-10, sizeText: 'ok. 1 nm', fact: 'Cukier, z którego komórki czerpią energię: 24 atomy.' },
+  { id: 'dna', name: 'Podwójna helisa DNA', sizeM: 3.4e-9, sizeText: 'jeden skręt 3,4 nm', fact: 'DNA z jednej komórki rozciągnięte miałoby ok. 2 metrów.' },
+  { id: 'ribosome', name: 'Rybosom', sizeM: 2.5e-8, sizeText: 'ok. 25 nm', fact: 'Komórkowa „fabryka” białek – w każdej komórce są ich miliony.' },
+  { id: 'virus', name: 'Wirus grypy', sizeM: 1.2e-7, sizeText: 'ok. 120 nm', fact: 'Jest ok. 15 razy mniejszy od bakterii.' },
   { id: 'bacterium', name: 'Bakteria E. coli', sizeM: 2e-6, sizeText: 'długość 2 µm', fact: 'Na główce szpilki zmieściłoby się ich ok. pół miliona.' },
   { id: 'rbc', name: 'Czerwona krwinka', sizeM: 7.5e-6, sizeText: 'średnica 7,5 µm', fact: 'W jednej kropli krwi jest ich ok. 250 milionów.' },
+  { id: 'pollen', name: 'Ziarno pyłku', sizeM: 3e-5, sizeText: 'ok. 30 µm', fact: 'Kolce pomagają mu przyczepić się do owadów.' },
   { id: 'hair', name: 'Włos ludzki', sizeM: 4.2e-4, sizeText: 'grubość 0,07 mm', fact: 'Rośnie ok. 1 cm na miesiąc. Pokrywają go łuski jak dachówki.' },
   { id: 'ant', name: 'Mrówka', sizeM: 5e-3, sizeText: 'długość 5 mm', fact: 'Potrafi unieść ciężar 10–50 razy większy od siebie.' },
+  { id: 'coin', name: 'Moneta 1 zł', sizeM: 0.023, sizeText: 'średnica 23 mm', fact: 'Na jej średnicy zmieszczą się ok. 4 mrówki.' },
   { id: 'hamster', name: 'Chomik', sizeM: 0.12, sizeText: 'długość 12 cm', fact: 'W torbach policzkowych przenosi jedzenie na zapas.' },
   { id: 'human', name: 'Człowiek', sizeM: 1.75, sizeText: 'wzrost 1,75 m', fact: 'Składa się z ok. 30 bilionów komórek.' },
+  { id: 'bus', name: 'Autobus', sizeM: 12, sizeText: 'długość 12 m', fact: 'Mieści ok. 100 pasażerów.' },
+  { id: 'whale', name: 'Płetwal błękitny', sizeM: 30, sizeText: 'długość 30 m', fact: 'Największe zwierzę w historii Ziemi – większe od dinozaurów.' },
   { id: 'eiffel', name: 'Wieża Eiffla', sizeM: 330, sizeText: 'wysokość 330 m', fact: 'Latem jest o ok. 15 cm wyższa – stal rozszerza się od ciepła.' },
+  { id: 'burj', name: 'Burj Khalifa', sizeM: 828, sizeText: 'wysokość 828 m', fact: 'Najwyższy budynek świata (Dubaj), 163 piętra.' },
   { id: 'everest', name: 'Mount Everest', sizeM: 8849, sizeText: 'wysokość 8849 m n.p.m.', fact: 'Najwyższy szczyt Ziemi; rośnie ok. 4 mm na rok.' },
+  { id: 'phobos', name: 'Fobos (księżyc Marsa)', sizeM: 2.25e4, sizeText: 'ok. 22 km', fact: 'Krąży tak nisko, że za kilkadziesiąt mln lat rozpadnie się lub spadnie na Marsa.' },
+  { id: 'amalthea', name: 'Amaltea (księżyc Jowisza)', sizeM: 1.67e5, sizeText: 'ok. 167 km', fact: 'Jedno z najbardziej czerwonych ciał w Układzie Słonecznym.' },
+  { id: 'enceladus', name: 'Enceladus', sizeM: 5.04e5, sizeText: 'średnica 504 km', fact: 'Z gejzerów tryska woda z podziemnego oceanu.' },
+  { id: 'moon', name: 'Księżyc', sizeM: 3.474e6, sizeText: 'średnica 3474 km', fact: 'Oddala się od Ziemi o ok. 3,8 cm rocznie.' },
   { id: 'earth', name: 'Ziemia', sizeM: 12742e3, sizeText: 'średnica 12 742 km', fact: 'Gdyby była wielkości jabłka, Everest byłby cieńszy niż jego skórka.' },
+  { id: 'jupiter', name: 'Jowisz', sizeM: 1.398e8, sizeText: 'średnica 139 820 km', fact: 'Zmieściłoby się w nim ok. 1300 Ziem.' },
+  { id: 'sun', name: 'Słońce', sizeM: 1.3927e9, sizeText: 'średnica 1,39 mln km', fact: 'Jego światło leci do Ziemi ok. 8 minut.' },
+  { id: 'arcturus', name: 'Arktur (czerwony olbrzym)', sizeM: 3.54e10, sizeText: 'średnica ok. 35 mln km (25× Słońce)', fact: 'Jedna z najjaśniejszych gwiazd na niebie (gwiazdozbiór Wolarza).' },
+  { id: 'betelgeuse', name: 'Betelgeza (nadolbrzym)', sizeM: 1.06e12, sizeText: 'średnica ok. 1 mld km (760× Słońce)', fact: 'Postawiona w miejscu Słońca sięgałaby za orbitę Marsa.' },
+  { id: 'solarsystem', name: 'Układ Słoneczny', sizeM: 9e12, sizeText: 'orbita Neptuna: ok. 9 mld km', fact: 'Światło przelatuje go w ok. 8 godzin.' },
 ];
 
 // --- Menu (panel w VR) ------------------------------------------------
@@ -1224,8 +1247,8 @@ function updateGrabs(dt) {
 const MODE1_GRAB = { minScale: SYSTEM_SCALE_MIN, maxScale: SYSTEM_SCALE_MAX, oneHand: 'lever' };
 const SHELF_GRAB = { minScale: MODE2_SCALE_MIN, maxScale: MODE2_SCALE_MAX, oneHand: 'lever' };
 const SHELF_GRAB_REMOTE = { minScale: MODE2_SCALE_MIN, maxScale: MODE2_SCALE_MAX, oneHand: 'remote' };
-const MODE3_GRAB = { minScale: MODE3_SCALE_MIN, maxScale: MODE3_SCALE_MAX, oneHand: 'spin' };
-const MODE5_GRAB = { minScale: UNIVERSE_SCALE_MIN, maxScale: UNIVERSE_SCALE_MAX, oneHand: 'lever' };
+const MODE3_GRAB = { minScale: MODE3_SCALE_MIN, maxScale: MODE3_SCALE_MAX, oneHand: 'lever' };
+const MODE5_GRAB = { minScale: 1, maxScale: 1, oneHand: 'remote' };   // obracasz cały kosmos wokół siebie
 const MENU_GRAB = { minScale: 1, maxScale: 1, oneHand: 'lever', single: true };
 
 // =====================================================================
@@ -2258,6 +2281,21 @@ function updatePeople(dt) {
   if (MODE3_PLANET_SPIN_DEG_S && !grabs.has(m3Planet) && !floaters.has(m3Planet)) m3Planet.rotateY(MODE3_PLANET_SPIN_DEG_S * DEG * dt);
 }
 
+// Chwyt planety jak przedmiotu: z bliska od razu, z daleka (promieniem) przylatuje do ręki
+function grabMode3(ctrl) {
+  const origin = new THREE.Vector3().setFromMatrixPosition(ctrl.matrixWorld);
+  const dir = new THREE.Vector3(0, 0, -1).transformDirection(ctrl.matrixWorld);
+  const R = M3_R * m3Planet.scale.x;
+  const near = origin.distanceTo(m3Planet.position) < R + NEAR_GRAB_MARGIN_M;
+  if (!near) {
+    raycaster.ray.set(origin, dir);
+    _sphere.set(m3Planet.position, R * 1.05);
+    if (!raycaster.ray.intersectsSphere(_sphere)) return false;
+  }
+  const pullTo = (!near && !grabs.has(m3Planet)) ? new THREE.Vector3(0, 0, -(R + MODE3_PULL_GAP_M)) : null;
+  return startGrab(m3Planet, ctrl, MODE3_GRAB, pullTo);
+}
+
 function layoutMode3() {
   const fwd = horizontalForward();
   floaters.delete(m3Planet);
@@ -2343,78 +2381,92 @@ const GALAXY_KINDS = [
 ];
 
 const galaxyMeshes = [];       // jedno InstancedMesh na rodzaj galaktyki = kilka wywołań rysowania
-const galaxies = [];           // { mesh, index, pos, vel, quat, spinAxis, spin, size, aspect, fixed }
+const galaxies = [];           // { mesh, index, pos, vel, quat, spin, size, aspect, fixed }
 const namedPlaces = [];        // etykiety: { label, pos }
-const cosmos = (() => {
-  const rnd = seededRandom('cosmos'), gauss = gaussian(rnd);
-  const quad = new THREE.PlaneGeometry(1, 1);
 
-  // --- sieć kosmiczna: węzły (gromady) połączone włóknami ---
-  const filamentDir = new THREE.Vector3(-0.78, 0.1, -0.52).normalize();   // "nasze" włókno przechodzi przez Ciebie
-  const nodes = [filamentDir.clone().multiplyScalar(145), filamentDir.clone().multiplyScalar(-160)];
-  const virgo = new THREE.Vector3(-30, 18, -42).normalize().multiplyScalar(54);   // Gromada w Pannie: ~54 mln lat św.
-  nodes.push(virgo);
+// Tło: sfera z obrazem sieci kosmicznej (włókna i gromady galaktyk), rysowana raz przy starcie.
+// Sieć jest wygenerowana w 3D i "rzutowana" na niebo, więc bliższe włókna przecinają całe niebo.
+function buildCosmicWebSky(rnd, gauss) {
+  const W = WEB_TEXTURE_WIDTH, H = W / 2;
+  const [canvas, ctx] = makeCanvas(W, H);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = 'lighter';
+  const toPixel = v => {                       // kierunek -> piksel mapy równokątnej (UV sfery three.js)
+    const d = v.clone().normalize();
+    let phi = Math.atan2(d.z, -d.x);
+    if (phi < 0) phi += Math.PI * 2;
+    return [phi / (Math.PI * 2) * W, Math.acos(THREE.MathUtils.clamp(d.y, -1, 1)) / Math.PI * H];
+  };
+  const dot = (v, rgb, bright, size) => {
+    const [x, y] = toPixel(v);
+    ctx.fillStyle = `rgba(${rgb},${Math.min(1, bright)})`;
+    ctx.fillRect(x - size / 2, y - size / 2, size, size);
+  };
+  const nodes = [];
   while (nodes.length < WEB_NODE_COUNT) {
-    const v = new THREE.Vector3(gauss(), gauss() * 0.8, gauss()).normalize().multiplyScalar(WEB_RADIUS_M * Math.cbrt(rnd()));
-    if (v.length() > 35) nodes.push(v);
+    const v = new THREE.Vector3(gauss(), gauss(), gauss()).normalize().multiplyScalar(0.15 + 0.85 * Math.cbrt(rnd()));
+    nodes.push(v);
   }
   const edges = new Set();
   nodes.forEach((a, i) => {
-    const near = nodes.map((b, j) => [j, a.distanceTo(b)]).filter(([j]) => j !== i).sort((x, y) => x[1] - y[1]).slice(0, 3);
-    for (const [j] of near) edges.add(i < j ? `${i}-${j}` : `${j}-${i}`);
+    nodes.map((b, j) => [j, a.distanceTo(b)]).filter(([j]) => j !== i).sort((x, y) => x[1] - y[1]).slice(0, 3)
+      .forEach(([j]) => edges.add(i < j ? `${i}-${j}` : `${j}-${i}`));
   });
-  edges.add('0-2'); edges.add('1-2');
   const edgeList = [...edges].map(k => k.split('-').map(Number));
   const lengths = edgeList.map(([i, j]) => nodes[i].distanceTo(nodes[j]));
-  const totalLen = lengths.reduce((s, l) => s + l, 0);
-
-  const pos = [], col = [];
-  const push = (v, warm, bright) => {
-    if (v.length() < GALAXY_FIELD_RADIUS_M * 0.9) return;    // blisko Ciebie są prawdziwe obrazki galaktyk
-    pos.push(v.x, v.y, v.z);
-    const b = bright * (0.3 + rnd() * 0.5);
-    if (warm) col.push(b, b * 0.8, b * 0.55); else col.push(b * 0.75, b * 0.8, b);
+  const total = lengths.reduce((s, l) => s + l, 0);
+  const sizeK = W / 2048;
+  const emit = (v, warm) => {
+    const near = 1 / (v.length() + 0.15);                 // bliższe = jaśniejsze i większe
+    const rgb = warm ? '255,215,170' : (rnd() < 0.5 ? '170,180,255' : '205,175,255');
+    dot(v, rgb, 0.18 * near * (0.4 + rnd()), sizeK * (0.8 + near * 0.9 * rnd()));
   };
-  const filamentPoints = WEB_POINT_COUNT * 0.75;
   edgeList.forEach(([i, j], e) => {
-    const n = Math.round(filamentPoints * lengths[e] / totalLen);
+    const n = Math.round(WEB_POINT_COUNT * 0.7 * lengths[e] / total);
     for (let k = 0; k < n; k++) {
       const t = rnd();
-      const w = WEB_FILAMENT_WIDTH_M * (0.6 + 0.8 * rnd()) * (0.6 + 0.8 * Math.min(t, 1 - t) * 2);
-      const v = new THREE.Vector3().lerpVectors(nodes[i], nodes[j], t).add(new THREE.Vector3(gauss() * w, gauss() * w, gauss() * w));
-      push(v, rnd() < 0.15, 0.9);
+      const w = 0.012 + 0.02 * rnd();
+      emit(new THREE.Vector3().lerpVectors(nodes[i], nodes[j], t).add(new THREE.Vector3(gauss() * w, gauss() * w, gauss() * w)), rnd() < 0.12);
     }
   });
-  const nodePoints = (WEB_POINT_COUNT * 0.25) / nodes.length;
-  nodes.forEach(nd => {
-    const sigma = 3 + rnd() * 6;
-    for (let k = 0; k < nodePoints; k++) push(nd.clone().add(new THREE.Vector3(gauss() * sigma, gauss() * sigma, gauss() * sigma)), rnd() < 0.6, 1.0);
-    const halo = makeGlowSprite(0xb090ff, sigma * 6, 0.18, softGlowTexture);     // poświata gromady
-    halo.position.copy(nd);
-    universe.add(halo);
-  });
-  const webGeo = new THREE.BufferGeometry();
-  webGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  webGeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  const web = new THREE.Points(webGeo, new THREE.PointsMaterial({
-    size: 2.0, sizeAttenuation: false, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  const perNode = WEB_POINT_COUNT * 0.3 / nodes.length;
+  for (const nd of nodes) {
+    const sigma = 0.01 + 0.025 * rnd();
+    for (let k = 0; k < perNode; k++) emit(nd.clone().add(new THREE.Vector3(gauss() * sigma, gauss() * sigma, gauss() * sigma)), rnd() < 0.5);
+  }
+  // poświata włókien: rozmyta kopia dodana na wierzch
+  const [glow, gctx] = makeCanvas(W / 4, H / 4);
+  gctx.filter = 'blur(3px)';
+  gctx.drawImage(canvas, 0, 0, W / 4, H / 4);
+  ctx.globalAlpha = 0.9;
+  ctx.drawImage(glow, 0, 0, W, H);
+  ctx.globalAlpha = 1;
+  const tex = canvasTexture(canvas);
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(WEB_SKY_RADIUS_M, 64, 32), new THREE.MeshBasicMaterial({
+    map: tex, side: THREE.BackSide, depthWrite: false, depthTest: false,
   }));
-  web.frustumCulled = false;
-  universe.add(web);
+  sky.renderOrder = -90;
+  sky.frustumCulled = false;
+  return sky;
+}
 
-  // --- galaktyki wokół Ciebie ---
+const cosmos = (() => {
+  const rnd = seededRandom('cosmos'), gauss = gaussian(rnd);
+  const quad = new THREE.PlaneGeometry(1, 1);
+  const sky = buildCosmicWebSky(rnd, gauss);
+  universe.add(sky);
+
   const specs = [];
-  // Grupa Lokalna (prawdziwe rozmiary i odległości w skali 1 m = 1 mln lat św.)
+  // Nasza Grupa Lokalna w prawdziwej skali (1 m = 1 mln lat św.)
   specs.push({ kind: 'barred', pos: new THREE.Vector3(0, -0.35, -0.7), size: 0.1, fixed: true, name: 'Droga Mleczna – tu jesteśmy', normal: new THREE.Vector3(0.2, 1, 0.3) });
   specs.push({ kind: 'spiral2', pos: new THREE.Vector3(0.55, 0.25, -0.8).normalize().multiplyScalar(2.5), size: 0.22, fixed: true, name: 'Galaktyka Andromedy (2,5 mln lat św.)', normal: new THREE.Vector3(0.9, 0.35, 0.3) });
-  specs.push({ kind: 'spiral3', pos: new THREE.Vector3(0.7, -0.1, -0.6).normalize().multiplyScalar(2.7), size: 0.06, fixed: true, name: 'Galaktyka Trójkąta', normal: new THREE.Vector3(0.3, 0.6, 1) });
   const pickKind = () => { let r = rnd(); for (const k of GALAXY_KINDS) { if ((r -= k.share) <= 0) return k.kind; } return 'spiral2'; };
   while (specs.length < GALAXY_COUNT) {
-    let p;
-    if (rnd() < GALAXY_FILAMENT_SHARE) p = filamentDir.clone().multiplyScalar((rnd() * 2 - 1) * GALAXY_FIELD_RADIUS_M).add(new THREE.Vector3(gauss(), gauss(), gauss()).multiplyScalar(3.5));
-    else p = new THREE.Vector3(gauss(), gauss(), gauss()).normalize().multiplyScalar(GALAXY_FIELD_RADIUS_M * Math.cbrt(rnd()));
-    if (p.length() < 1.0 || p.length() > GALAXY_FIELD_RADIUS_M) continue;          // Grupa Lokalna zostaje "pusta"
-    const size = GALAXY_SIZE_MIN_M * Math.pow(GALAXY_SIZE_MAX_M / GALAXY_SIZE_MIN_M, Math.pow(rnd(), 1.6));
+    const dir = new THREE.Vector3(gauss(), gauss(), gauss()).normalize();
+    const r = GALAXY_MIN_DIST_M + (GALAXY_FIELD_RADIUS_M - GALAXY_MIN_DIST_M) * Math.pow(rnd(), GALAXY_NEAR_DENSITY / 3 + 0.33);
+    const p = dir.multiplyScalar(r);
+    if (p.distanceTo(specs[0].pos) < 0.35 || p.distanceTo(specs[1].pos) < 0.5) continue;   // wolne miejsce wokół naszych galaktyk
+    const size = GALAXY_SIZE_MIN_M * Math.pow(GALAXY_SIZE_MAX_M / GALAXY_SIZE_MIN_M, Math.pow(rnd(), 1.4));
     specs.push({ kind: pickKind(), pos: p, size });
   }
   for (const k of GALAXY_KINDS) {
@@ -2432,7 +2484,7 @@ const cosmos = (() => {
         quat: new THREE.Quaternion().setFromUnitVectors(Z_AXIS, (s.normal || new THREE.Vector3(gauss(), gauss(), gauss())).normalize()),
         spin: (0.03 + rnd() * 0.12) * (rnd() < 0.5 ? -1 : 1),
       };
-      const b = 0.55 + rnd() * 0.45;
+      const b = s.fixed ? 1 : 0.5 + rnd() * 0.5;
       mesh.setColorAt(index, color.setRGB(k.tint[0] * b, k.tint[1] * b, k.tint[2] * b));
       galaxies.push(g);
       if (s.name) namedPlaces.push({ label: makeLabel(s.name), pos: s.pos.clone(), lift: s.size * 0.7 });
@@ -2441,9 +2493,8 @@ const cosmos = (() => {
     galaxyMeshes.push(mesh);
     universe.add(mesh);
   }
-  namedPlaces.push({ label: makeLabel('Gromada w Pannie (54 mln lat św.)'), pos: virgo.clone(), lift: 8 });
   for (const n of namedPlaces) mode5Labels.add(n.label);
-  return { web, nodes };
+  return { sky };
 })();
 
 const _spinQ = new THREE.Quaternion();
@@ -2453,7 +2504,9 @@ function updateGalaxies(dt) {
   for (const g of galaxies) {
     if (!g.fixed) {
       g.pos.addScaledVector(g.vel, dt);
-      if (g.pos.length() > GALAXY_FIELD_RADIUS_M) g.pos.multiplyScalar(-0.98);   // wylatuje z jednej strony – wraca z drugiej
+      const r = g.pos.length();
+      if (r > GALAXY_FIELD_RADIUS_M) g.pos.multiplyScalar(-0.98);   // wylatuje z jednej strony – wraca z drugiej
+      else if (r < GALAXY_MIN_DIST_M) g.vel.negate();             // nie wlatuje w twarz
     }
     if (g.billboard) {
       _m1.lookAt(eyeLocal, g.pos, UP);                     // eliptyczne i nieregularne: zawsze przodem do Ciebie
@@ -2515,6 +2568,38 @@ function ellipsoid(mat, sx, sy, sz, x, y, z) {
   return m;
 }
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
+// wiele małych elementów (kolce, atomy) jako jedna siatka = jedno wywołanie rysowania
+function mergedMesh(geoms, mat) {
+  const merged = mergeGeometries(geoms.map(g => (g.index ? g.toNonIndexed() : g)), false);
+  return new THREE.Mesh(merged, mat);
+}
+// geometria ustawiona wzdłuż kierunku (od środka) w danej odległości
+function placedGeometry(geo, dir, dist) {
+  const m = new THREE.Matrix4().compose(dir.clone().multiplyScalar(dist), new THREE.Quaternion().setFromUnitVectors(UP, dir), new THREE.Vector3(1, 1, 1));
+  return geo.clone().applyMatrix4(m);
+}
+const fibonacciDirs = n => Array.from({ length: n }, (_, i) => {
+  const y = 1 - (2 * (i + 0.5)) / n, r = Math.sqrt(1 - y * y), a = i * 2.399963;
+  return V(Math.cos(a) * r, y, Math.sin(a) * r);
+});
+function sphereVisual(def, R) {                 // planeta/księżyc z tablic BODIES/MOONS (z teksturą zastępczą)
+  const v = buildPlanetVisual({ tilt: 0, ...def }, R, null);
+  v.group.position.y = R;
+  const g = new THREE.Group();
+  g.add(v.group);
+  return g;
+}
+function starVisual(color, glowColor, lumpy = false) {
+  const g = new THREE.Group();
+  const geo = lumpy ? lumpyGeometry('star' + color, 1, 1, 1) : sphereGeometryHi;
+  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color }));
+  m.scale.setScalar(0.5);
+  m.position.y = 0.5;
+  const glow = makeGlowSprite(glowColor, 1.7, 0.75);
+  glow.position.y = 0.5;
+  g.add(m, glow);
+  return g;
+}
 
 // Każdy model ma rozmiar opisany w SCALE_OBJECTS = 1 jednostka, podstawa na y = 0
 const SCALE_BUILDERS = {
@@ -2673,6 +2758,175 @@ const SCALE_BUILDERS = {
     g.add(new THREE.Mesh(geo, stdMat(0xffffff, { vertexColors: true, flatShading: true, roughness: 0.95 })));
     return g;
   },
+  atom() {
+    const g = new THREE.Group();
+    const cloud = new THREE.Mesh(sphereGeometryHi, stdMat(0x5aa0ff, { transparent: true, opacity: 0.18, depthWrite: false, emissive: 0x10305a }));
+    cloud.scale.setScalar(0.5); cloud.position.y = 0.5;
+    const nucleus = ellipsoid(stdMat(0xff5a40, { emissive: 0x401008 }), 0.05, 0.05, 0.05, 0, 0.5, 0);
+    const orbit = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.004, 6, 80), stdMat(0x9fd0ff, { emissive: 0x2a4a70 }));
+    orbit.position.y = 0.5; orbit.rotation.x = 1.2;
+    const electron = ellipsoid(stdMat(0x9fe0ff, { emissive: 0x3070a0 }), 0.03, 0.03, 0.03, 0.38, 0.5, 0);
+    g.add(cloud, nucleus, orbit, electron);
+    return g;
+  },
+  glucose() {
+    const g = new THREE.Group();
+    const C = stdMat(0x505050), O = stdMat(0xe03030), H = stdMat(0xf0f0f0), bond = stdMat(0xbbbbbb);
+    const ring = [];
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; ring.push(V(Math.cos(a) * 0.22, 0.5 + Math.sin(a) * 0.22, 0)); }
+    ring.forEach((p, i) => {
+      g.add(ellipsoid(i === 0 ? O : C, 0.07, 0.07, 0.07, p.x, p.y, p.z));
+      g.add(beam(p, ring[(i + 1) % 6], 0.015, bond));
+      if (i > 0) {                                   // grupy -OH na zewnątrz pierścienia
+        const out = p.clone().sub(V(0, 0.5, 0)).setZ(0).normalize();
+        const o = p.clone().addScaledVector(out, 0.17).add(V(0, 0, (i % 2 ? 0.08 : -0.08)));
+        const h = o.clone().addScaledVector(out, 0.1);
+        g.add(beam(p, o, 0.012, bond), ellipsoid(O, 0.055, 0.055, 0.055, o.x, o.y, o.z), beam(o, h, 0.01, bond), ellipsoid(H, 0.035, 0.035, 0.035, h.x, h.y, h.z));
+      }
+    });
+    return g;
+  },
+  dna() {
+    const g = new THREE.Group();
+    const strand = (phase, color) => {
+      const pts = [];
+      for (let i = 0; i <= 60; i++) { const t = i / 60, a = t * Math.PI * 2 + phase; pts.push(V(Math.cos(a) * 0.2, t, Math.sin(a) * 0.2)); }
+      return new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 80, 0.03, 8), stdMat(color, { roughness: 0.4 }));
+    };
+    g.add(strand(0, 0x3a7bd5), strand(Math.PI * 0.8, 0xe08a2a));
+    const colors = [0x4caf50, 0xe53935, 0xfdd835, 0x8e24aa];
+    for (let k = 0; k < 10; k++) {                    // pary zasad (A–T, G–C)
+      const t = (k + 0.5) / 10, a = t * Math.PI * 2;
+      const p1 = V(Math.cos(a) * 0.2, t, Math.sin(a) * 0.2), p2 = V(Math.cos(a + Math.PI * 0.8) * 0.2, t, Math.sin(a + Math.PI * 0.8) * 0.2);
+      const mid = p1.clone().lerp(p2, 0.5);
+      g.add(beam(p1, mid, 0.02, stdMat(colors[k % 4])), beam(mid, p2, 0.02, stdMat(colors[(k + 2) % 4])));
+    }
+    return g;
+  },
+  ribosome() {
+    const g = new THREE.Group();
+    const big = new THREE.Mesh(lumpyGeometry('rib1', 1, 0.8, 0.9), stdMat(0x6b8fd6, { roughness: 0.8 }));
+    big.scale.setScalar(0.33); big.position.y = 0.6;
+    const small = new THREE.Mesh(lumpyGeometry('rib2', 1, 0.6, 0.8), stdMat(0xd6a86b, { roughness: 0.8 }));
+    small.scale.setScalar(0.27); small.position.set(0.04, 0.2, 0.02);
+    g.add(big, small);
+    return g;
+  },
+  virus() {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(sphereGeometryHi, stdMat(0xc85a8a, { roughness: 0.7 }));
+    body.scale.setScalar(0.33); body.position.y = 0.5;
+    const stalk = new THREE.CylinderGeometry(0.012, 0.012, 0.12, 5), head = new THREE.SphereGeometry(0.035, 6, 4);
+    const geoms = [];
+    for (const d of fibonacciDirs(70)) geoms.push(placedGeometry(stalk, d, 0.38), placedGeometry(head, d, 0.46));
+    const spikes = mergedMesh(geoms, stdMat(0xf0d070, { roughness: 0.6 }));
+    spikes.position.y = 0.5;
+    g.add(body, spikes);
+    return g;
+  },
+  pollen() {
+    const g = new THREE.Group();
+    const mat = stdMat(0xe8c040, { roughness: 0.85 });
+    const body = new THREE.Mesh(sphereGeometryHi, mat);
+    body.scale.setScalar(0.4); body.position.y = 0.5;
+    const cone = new THREE.ConeGeometry(0.03, 0.1, 6);
+    const spikes = mergedMesh(fibonacciDirs(140).map(d => placedGeometry(cone, d, 0.43)), mat);
+    spikes.position.y = 0.5;
+    g.add(body, spikes);
+    return g;
+  },
+  coin() {
+    const [canvas, ctx] = makeCanvas(256, 256);
+    ctx.fillStyle = '#c9c9cf'; ctx.fillRect(0, 0, 256, 256);
+    ctx.strokeStyle = '#9a9aa2'; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(128, 128, 112, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#8a8a92'; ctx.font = 'bold 120px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('1', 128, 112); ctx.font = 'bold 44px system-ui, sans-serif'; ctx.fillText('ZŁOTY', 128, 196);
+    const face = stdMat(0xffffff, { map: canvasTexture(canvas), metalness: 0.7, roughness: 0.35 });
+    const edge = stdMat(0xbfbfc6, { metalness: 0.7, roughness: 0.35 });
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.08, 64), [edge, face, face]);
+    m.rotation.x = Math.PI / 2; m.position.y = 0.5;
+    const g = new THREE.Group();
+    g.add(m);
+    return g;
+  },
+  bus() {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1, 0.25, 0.21), stdMat(0xd8342c, { roughness: 0.5 }));
+    body.position.y = 0.17;
+    const windows = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.075, 0.214), stdMat(0x1c2a3a, { roughness: 0.2, metalness: 0.3 }));
+    windows.position.set(-0.02, 0.22, 0);
+    const front = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.12, 0.18), stdMat(0x1c2a3a, { roughness: 0.2 }));
+    front.position.set(0.5, 0.2, 0);
+    const wheelGeo = new THREE.CylinderGeometry(0.048, 0.048, 0.03, 16).rotateX(Math.PI / 2);
+    const wheels = mergedMesh([[-0.33, 0.106], [-0.33, -0.106], [0.33, 0.106], [0.33, -0.106]].map(([x, z]) => wheelGeo.clone().translate(x, 0.048, z)), stdMat(0x111111));
+    g.add(body, windows, front, wheels);
+    return g;
+  },
+  whale() {
+    const g = new THREE.Group();
+    const skin = stdMat(0x5a7aa0, { roughness: 0.6 }), belly = stdMat(0xc8d4e0, { roughness: 0.7 });
+    g.add(ellipsoid(skin, 0.42, 0.075, 0.09, 0.05, 0.1, 0), ellipsoid(belly, 0.36, 0.05, 0.07, 0.08, 0.07, 0),
+      ellipsoid(skin, 0.14, 0.05, 0.06, -0.38, 0.11, 0));
+    for (const sz of [-1, 1]) {
+      const fluke = ellipsoid(skin, 0.07, 0.01, 0.07, -0.5, 0.12, sz * 0.06); fluke.rotation.y = sz * 0.5; g.add(fluke);
+      const fin = ellipsoid(skin, 0.07, 0.008, 0.025, 0.2, 0.06, sz * 0.09); fin.rotation.y = -sz * 0.6; fin.rotation.x = sz * 0.4; g.add(fin);
+    }
+    return g;
+  },
+  burj() {
+    const g = new THREE.Group();
+    const mat = stdMat(0xaebdd0, { metalness: 0.6, roughness: 0.3 });
+    const segs = [[0, 0.18, 0.12], [0.18, 0.34, 0.1], [0.34, 0.48, 0.08], [0.48, 0.6, 0.06], [0.6, 0.7, 0.045], [0.7, 0.78, 0.03], [0.78, 0.83, 0.02]];
+    for (const [y0, y1, r] of segs) {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.85, r, y1 - y0, 6), mat);
+      m.position.y = (y0 + y1) / 2;
+      g.add(m);
+    }
+    g.add(beam(V(0, 0.83, 0), V(0, 1, 0), 0.006, mat));
+    return g;
+  },
+  phobos() {
+    const m = new THREE.Mesh(lumpyGeometry('phobos', 1, 0.82, 0.72), stdMat(0x7a6e64, { roughness: 0.95 }));
+    m.scale.setScalar(0.5); m.position.y = 0.42;
+    const g = new THREE.Group(); g.add(m); return g;
+  },
+  amalthea() {
+    const m = new THREE.Mesh(lumpyGeometry('amalthea', 1, 0.6, 0.55), stdMat(0xa04a2a, { roughness: 0.9 }));
+    m.scale.setScalar(0.5); m.position.y = 0.33;
+    const g = new THREE.Group(); g.add(m); return g;
+  },
+  enceladus() { return sphereVisual(MOONS.saturn.find(m => m.id === 'enceladus'), 0.5); },
+  moon() { return sphereVisual(MOONS.earth[0], 0.5); },
+  jupiter() { return sphereVisual(BODIES.find(b => b.id === 'jupiter'), 0.5); },
+  sun() {
+    const g = sphereVisual(BODIES.find(b => b.id === 'sun'), 0.5);
+    const glow = makeGlowSprite(0xffd060, 1.6, 0.6);
+    glow.position.y = 0.5;
+    g.add(glow);
+    return g;
+  },
+  arcturus() { return starVisual(0xffa860, 0xff9040); },
+  betelgeuse() { return starVisual(0xff6a30, 0xff4a20, true); },
+  solarsystem() {
+    const g = new THREE.Group();
+    const disk = new THREE.Group();
+    disk.position.y = 0.5;
+    disk.rotation.x = 0.45;                            // lekko pochylony, żeby orbity były widoczne
+    const nep = BODIES.find(b => b.id === 'neptune').au;
+    for (const b of BODIES) {
+      if (b.au <= 0 || b.id === 'pluto') continue;
+      const r = 0.5 * b.au / nep;
+      disk.add(makeCircleLineXZ(r, 128, b.color, 0.8));
+      const a = (b.L0 || 0) * DEG;
+      const dot = ellipsoid(new THREE.MeshBasicMaterial({ color: b.color }), 0.008, 0.008, 0.008, Math.cos(a) * r, 0, -Math.sin(a) * r);
+      disk.add(dot);
+    }
+    disk.add(ellipsoid(new THREE.MeshBasicMaterial({ color: 0xffd060 }), 0.012, 0.012, 0.012, 0, 0, 0));
+    const glow = makeGlowSprite(0xffd060, 0.08, 0.9);
+    disk.add(glow);
+    g.add(disk);
+    return g;
+  },
   earth() {
     const def = BODIES.find(b => b.id === 'earth');
     const v = models.earth ? buildEarthModel(0.5) : buildPlanetVisual(def, 0.5, null);
@@ -2685,37 +2939,37 @@ const SCALE_BUILDERS = {
 };
 
 const scaleItems = [];
-{
-  let prevExtent = 0, x = 0;
-  for (const def of SCALE_OBJECTS) {
-    const model = (SCALE_BUILDERS[def.id] || SCALE_BUILDERS.hamster)();
-    const holder = new THREE.Group();                  // pozycja i skala (zmieniają się przy zoomie)
-    const turn = new THREE.Group();                    // powolny obrót
-    turn.add(model);
-    holder.add(turn);
-    mode6Group.add(holder);
-    const box = new THREE.Box3().setFromObject(model);
-    const size = box.getSize(new THREE.Vector3());
-    const mats = new Set();
-    model.traverse(o => {
-      if (!o.material) return;
-      if (o.isMesh && models.earth && def.id === 'earth') o.material = o.material.clone();
-      o.material.transparent = true;                 // do płynnego znikania
-      mats.add(o.material);
-      o.frustumCulled = false;
-    });
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const extent = def.sizeM * maxDim;
-    x += prevExtent ? (prevExtent + extent) * (0.5 + SCALE_ROW_GAP * 0.5) : 0;
-    prevExtent = extent;
-    const label = makeLabel(`${def.name} · ${def.sizeText}`);
-    const info = makeInfoLabel({ name: def.name, info: { rows: [['Rozmiar', def.sizeText]], fact: def.fact } });
-    mode6Group.add(label, info);
-    scaleItems.push({
-      def, holder, turn, mats: [...mats], maxDim, height: size.y, x, label, info, alpha: 1,
-      focusLog: Math.log10(extent / SCALE_FOCUS_SIZE_M), mixer: model.userData.mixer || null,
-    });
-  }
+for (const def of SCALE_OBJECTS) {
+  const model = (SCALE_BUILDERS[def.id] || SCALE_BUILDERS.hamster)();
+  const holder = new THREE.Group();                  // pozycja i skala (zmieniają się przy zoomie)
+  const turn = new THREE.Group();                    // powolny obrót
+  turn.add(model);
+  holder.add(turn);
+  mode6Group.add(holder);
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const mats = [];
+  model.traverse(o => {
+    if (!o.material) return;
+    // własne kopie materiałów: znikanie nie może wpływać na inne tryby (np. ludziki z Trybu 3)
+    o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone();
+    for (const m of [].concat(o.material)) {
+      m.userData.baseOpacity = m.opacity;
+      m.transparent = true;                          // do płynnego znikania
+      mats.push(m);
+    }
+    o.frustumCulled = false;
+  });
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const extent = def.sizeM * maxDim;
+  const label = makeLabel(`${def.name} · ${def.sizeText}`);
+  const info = makeInfoLabel({ name: def.name, info: { rows: [['Rozmiar', def.sizeText]], fact: def.fact } });
+  for (const l of [label, info]) { l.material.depthTest = false; l.renderOrder = 40; }   // zawsze czytelne
+  mode6Group.add(label, info);
+  scaleItems.push({
+    def, holder, turn, mats, maxDim, height: size.y, label, info, alpha: -1,
+    focusLog: Math.log10(extent / SCALE_FOCUS_SIZE_M), mixer: model.userData.mixer || null,
+  });
 }
 // Napis "1 m tutaj = ... naprawdę" (aktualizowany kilka razy na sekundę)
 const scaleRuler = (() => {
@@ -2756,17 +3010,14 @@ function layoutMode6() {
   if (!renderer.xr.isPresenting) orbitControls.target.copy(m6Origin).addScaledVector(m6Fwd, SCALE_DISTANCE_M + 0.3).setY(SCALE_BASELINE_Y_M + 0.3);
 }
 
-// Środek rzędu płynnie przechodzi od obiektu do obiektu wraz z zoomem
-function scaleCenterX(L) {
+// Ułamkowy "numer" obiektu w centrum uwagi dla danej skali (np. 12,4 = między człowiekiem a autobusem)
+function scaleIndexAt(L) {
   const it = scaleItems;
-  if (L <= it[0].focusLog) return it[0].x;
+  if (L <= it[0].focusLog) return 0;
   for (let i = 0; i < it.length - 1; i++) {
-    if (L < it[i + 1].focusLog) {
-      const t = (L - it[i].focusLog) / (it[i + 1].focusLog - it[i].focusLog);
-      return THREE.MathUtils.lerp(it[i].x, it[i + 1].x, smooth(t));
-    }
+    if (L < it[i + 1].focusLog) return i + (L - it[i].focusLog) / (it[i + 1].focusLog - it[i].focusLog);
   }
-  return it[it.length - 1].x;
+  return it.length - 1;
 }
 
 function nearestScaleItem(L = state.scaleLog) {
@@ -2810,34 +3061,52 @@ function updateScaleMode(dt) {
     if (a.t >= 1) state.scaleAnim = null;
   }
   const L = state.scaleLog, F = Math.pow(10, L);
-  const xc = scaleCenterX(L);
+  const jc = scaleIndexAt(L);
+  // Kąty na łuku: obiekty ustawione jeden obok drugiego tak, by się nie zasłaniały
+  const n = scaleItems.length;
+  const dists = new Array(n), half = new Array(n), theta = new Array(n);
+  for (let j = 0; j < n; j++) {
+    const e = scaleItems[j].def.sizeM / F * scaleItems[j].maxDim;
+    dists[j] = SCALE_DISTANCE_M + e * SCALE_DEPTH_FACTOR;
+    half[j] = Math.atan((e / 2) / dists[j]);
+  }
+  theta[0] = 0;
+  for (let j = 1; j < n; j++) theta[j] = theta[j - 1] + half[j - 1] + half[j] + SCALE_GAP_DEG * DEG;
+  const j0 = Math.min(n - 2, Math.floor(jc));
+  const offset = THREE.MathUtils.lerp(theta[j0], theta[j0 + 1], smooth(jc - j0));
   const lnFade = Math.log(SCALE_FADE_FACTOR);
   const current = nearestScaleItem(L);
   const nearFocus = Math.abs(current.focusLog - L) < 0.2 && !state.scaleAnim;
-  for (const it of scaleItems) {
+  scaleItems.forEach((it, j) => {
     const d = it.def.sizeM / F;                         // skala modelu (1 jednostka = d metrów w goglach)
     const extent = d * it.maxDim;
-    let alpha = Math.min(1, Math.log(extent / SCALE_HIDE_SMALL_M) / lnFade, Math.log(SCALE_HIDE_LARGE_M / extent) / lnFade);
-    const xoff = (it.x - xc) / F;
-    if (Math.abs(xoff) > 300) alpha = 0;
+    const rel = j - jc;                                 // < 0: mniejsze (z lewej), > 0: większe (z prawej)
+    const alpha = Math.min(1, Math.log(extent / SCALE_HIDE_SMALL_M) / lnFade, Math.log(SCALE_HIDE_LARGE_M / extent) / lnFade,
+      SCALE_NEIGHBORS + 0.5 - Math.abs(rel));
     const visible = alpha > 0.01;
     it.holder.visible = visible;
     it.label.visible = visible && alpha > 0.3 && !(nearFocus && it === current);
     it.info.visible = visible && nearFocus && it === current;
-    if (!visible) continue;
+    if (!visible) return;
     if (Math.abs(alpha - it.alpha) > 0.01) {
-      for (const m of it.mats) m.opacity = alpha;
+      for (const m of it.mats) m.opacity = m.userData.baseOpacity * Math.min(1, alpha);
       it.alpha = alpha;
     }
+    // łuk przed Tobą: obiekt w centrum na wprost, mniejsze w lewo, większe w prawo i dalej
+    const th = theta[j] - offset;
+    const dist = dists[j];
+    _v3.copy(m6Right).multiplyScalar(Math.sin(th)).addScaledVector(m6Fwd, Math.cos(th));
     it.holder.scale.setScalar(d);
-    it.holder.position.copy(m6Origin).addScaledVector(m6Right, xoff).addScaledVector(m6Fwd, SCALE_DISTANCE_M + extent / 2);
+    it.holder.position.copy(m6Origin).addScaledVector(_v3, dist);
     it.holder.position.y = SCALE_BASELINE_Y_M;
     it.turn.rotation.y += SCALE_TURN_DEG_S * DEG * dt;
     if (it.mixer) it.mixer.update(dt);
-    const top = _v1.copy(it.holder.position);
-    if (it.label.visible) placeLabel(it.label, top, it.height * d * 1.05, LABEL_ANGLE_DEG * 1.2);
-    if (it.info.visible) placeLabel(it.info, top, it.height * d * 1.05, INFO_LABEL_ANGLE_DEG * 0.8);
-  }
+    // etykieta: na przedniej krawędzi obiektu, nie wyżej niż trochę ponad oczami
+    const anchor = _v1.copy(m6Origin).addScaledVector(_v3, Math.max(SCALE_DISTANCE_M, dist - extent * 0.5));
+    anchor.y = Math.min(SCALE_BASELINE_Y_M + it.height * d, eyePos.y + 0.3);
+    if (it.label.visible) placeLabel(it.label, anchor, 0.02, LABEL_ANGLE_DEG * 1.2);
+    if (it.info.visible) placeLabel(it.info, anchor, 0.02, INFO_LABEL_ANGLE_DEG * 0.8);
+  });
   scaleRuler.setText(`1 m w goglach = ${formatMeters(F)} naprawdę`);
   const rp = _v2.copy(m6Origin).addScaledVector(m6Fwd, SCALE_DISTANCE_M * 0.85);
   rp.y = SCALE_BASELINE_Y_M - 0.04;
@@ -2866,9 +3135,9 @@ const menuButtons = [
 const MENU_HINTS = {
   1: 'Spust: chwyć · 2 spusty: zoom · Gałka: zoom · Grip na planecie: leć do niej',
   2: 'Spust/grip: chwyć (z daleka przyciąga) · puść w ruchu = rzut · A: nóż · B: sklej',
-  3: 'Spust/grip: obracaj planetę (puść w ruchu – kręci się) · 2 ręce: skaluj',
+  3: 'Spust/grip: chwyć planetę (z daleka przylatuje) i obracaj w dłoni · 2 ręce: powiększ',
   4: 'Obiekty NIE w skali – prawdziwe rozmiary na tabliczkach · A: nóż · B: sklej',
-  5: 'Spust/grip: chwyć Wszechświat · 2 ręce: zmniejsz i zobacz sieć kosmiczną',
+  5: 'Rozejrzyj się – jesteś wśród galaktyk · spust/grip + obrót dłoni: obróć niebo',
   6: 'Gałka: płynny zoom · A/B: skok do większego/mniejszego · suwak: prędkość',
 };
 const [menuCanvas, menuCtx] = makeCanvas(MENU_CANVAS_W, MENU_CANVAS_H);
@@ -3189,7 +3458,7 @@ function onPressStart(ctrl, source) {
     if (isKnifeHand(ctrl)) { if (source === 'select') tryKnifeCut(); return; }
     grabShelf(shelfFor(mode), ctrl);
     grabbed = !!ctrl.userData.grabTarget;
-  } else if (mode === 3) grabbed = startGrab(m3Planet, ctrl, MODE3_GRAB);
+  } else if (mode === 3) grabbed = grabMode3(ctrl);
   else if (mode === 5) grabbed = startGrab(universe, ctrl, MODE5_GRAB);
   if (grabbed || ctrl.userData.grabTarget) ctrl.userData.grabSource = source;
 }
@@ -3372,7 +3641,7 @@ function updateStatus(time) {
   } else if (mode === 3) {
     text = `Skala ×${m3Planet.scale.x.toFixed(2)}  ·  ⌀ planety ${formatLength(MODE3_PLANET_DIAMETER_M * m3Planet.scale.x)}  ·  ${state.fps} FPS`;
   } else if (mode === 5) {
-    text = `1 m = ${formatLy(LY_MILLIONS_PER_M / universe.scale.x)} lat świetlnych  ·  galaktyk: ${galaxies.length}  ·  ${state.fps} FPS`;
+    text = `1 m = ${formatLy(LY_MILLIONS_PER_M)} lat świetlnych  ·  galaktyk wokół: ${galaxies.length}  ·  ${state.fps} FPS`;
   } else {
     text = `1 m w goglach = ${formatMeters(Math.pow(10, state.scaleLog))}  ·  ${nearestScaleItem().def.name}  ·  ${state.fps} FPS`;
   }

@@ -15,12 +15,13 @@ Sześć trybów (przełączane na panelu menu):
   Ludziki idą po rzeźbie terenu (góry, doliny) i omijają morza.
 - **Tryb 4 – Obiekty:** czarna dziura, pulsar, biały karzeł, Ziemia (dla porównania) i kometa. Są w wygodnych rozmiarach, a prawdziwe
   rozmiary podają tabliczki. Pulsar i białego karła można przeciąć.
-- **Tryb 5 – Kosmos:** największa skala Wszechświata (1 m = 1 mln lat świetlnych). Wokół Ciebie latają
-  miniaturowe galaktyki, w tym Droga Mleczna, Andromeda i Galaktyka Trójkąta, a w tle widać sieć kosmiczną
-  (włókna i gromady galaktyk).
-- **Tryb 6 – Skala:** podróż przez rzędy wielkości: bakteria (2 µm) → krwinka → włos → mrówka → chomik →
-  człowiek → wieża Eiffla → Mount Everest → Ziemia (12 742 km). Obiekty za małe, by je zobaczyć, i za duże,
-  by je ogarnąć, płynnie znikają.
+- **Tryb 5 – Kosmos:** stoisz w miejscu, zanurzony w setkach miniaturowych galaktyk (700, gęstość
+  zwiększona dla efektu). Droga Mleczna i Andromeda są w prawdziwej skali (1 m = 1 mln lat świetlnych),
+  a tło to sfera z obrazem sieci kosmicznej (włókna i gromady galaktyk).
+- **Tryb 6 – Skala:** podróż przez 23 rzędy wielkości, od atomu (0,1 nm) przez DNA, wirusa, bakterię, włos,
+  mrówkę, człowieka, autobus, płetwala, wieżę Eiffla, Everest, księżyce, Ziemię, Jowisza i Słońce po Betelgezę
+  i cały Układ Słoneczny (28 obiektów). Kolejne różnią się najwyżej ok. 30×, więc zawsze widać trzy
+  porównywalne obok siebie na wprost: mniejszy z lewej, bieżący w środku, większy z prawej.
 
 Ziemia we wszystkich trybach to model 3D z teksturą (`models/earth.glb`).
 
@@ -67,15 +68,16 @@ Skala: od ok. **15 cm** (cały układ w dłoni) do **5 mln ×** (wtedy Ziemia ma
 
 | Akcja | Jak |
 |---|---|
-| Obracaj planetę jak globus | złap i przeciągnij; puść w ruchu – planeta kręci się dalej i powoli zwalnia |
-| Skaluj i przesuwaj | obie ręce (0,3× – 40×) |
+| Złap planetę jak przedmiot | spust/grip; z daleka (promieniem) planeta przylatuje do ręki |
+| Obracaj, oglądaj ludziki z bliska | trzymając, obracaj dłoń i przybliż planetę do oczu; puść w ruchu – poleci i zwolni |
+| Powiększ / zmniejsz | obie ręce (0,1× – 40×) |
 
 ### Tryb 5 – Kosmos
 
 | Akcja | Jak |
 |---|---|
-| Przesuń/obróć cały Wszechświat | chwyć jedną ręką |
-| **Zobacz sieć kosmiczną** | chwyć obiema rękami i zsuń je: przy ok. 0,02× cała sieć (ok. 460 mln lat św.) mieści się wokół Ciebie |
+| Rozglądaj się | galaktyki są wszędzie wokół, także nad i pod Tobą |
+| Obróć całe niebo | chwyć spustem/gripem i obróć dłoń |
 
 ### Tryb 6 – Skala
 
@@ -154,7 +156,7 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 | `KNIFE_*`, `CUT_*`, `LAYERS` | nóż, przekrój i warstwy wnętrza każdego ciała |
 | `MODE3_*` | Tryb 3: średnica planety, liczba/wzrost/prędkość ludzików, kolory |
 | `OBJECTS`, `MODE4_*`, `PULSAR_*`, `BLACK_HOLE_*` | Tryb 4: lista obiektów, rozmiary, animacje |
-| `GALAXY_*`, `WEB_*`, `UNIVERSE_*` | Tryb 5: liczba i rozmiary galaktyk, gęstość sieci kosmicznej, zakres skali |
+| `GALAXY_*`, `WEB_*` | Tryb 5: liczba, rozmiary i gęstość galaktyk; rozdzielczość i gęstość tła z siecią kosmiczną |
 | `MODEL_FILES`, `PERSON_*` | pliki modeli 3D; nazwa animacji chodu i obrót modelu ludzika |
 | `SCALE_*`, `SCALE_OBJECTS` | Tryb 6: lista obiektów (rozmiar, opis), progi znikania, prędkość zoomu |
 | `MENU_*` | panel menu: rozmiar, odległość, położenie zakładki schowanego menu |
@@ -181,9 +183,9 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 - **Rzucanie:** z ruchu obiektu w ostatnich 0,1 s liczona jest prędkość i obrót. Potem prędkość maleje
   wykładniczo (`THROW_DRAG`), co daje wrażenie gęstej cieczy bez grawitacji.
 - **Kosmos (Tryb 5):** galaktyki to obrazki narysowane w kodzie, po 1 wywołaniu rysowania na rodzaj (spiralne,
-  z poprzeczką, eliptyczne, nieregularne). Sieć kosmiczna to ok. 30 000 punktów rozłożonych wzdłuż włókien między
-  40 gromadami. Gęstość galaktyk wokół Ciebie jest zwiększona dla efektu. Grupa Lokalna (Droga Mleczna, Andromeda,
-  Trójkąt) i Gromada w Pannie leżą w prawdziwych odległościach.
+  z poprzeczką, eliptyczne, nieregularne). Tło to jedna kula z teksturą 4096×2048. Sieć kosmiczna (90 gromad,
+  ~90 000 punktów) jest wygenerowana w 3D i raz „sfotografowana” na niebo przy starcie, więc w goglach to tylko
+  obrazek i nic nie kosztuje.
 - **Nóż (Tryby 2 i 4):** bez geometrii boolowskiej. Planeta jest zastępowana dwoma klonami z przeciwnymi płaszczyznami
   przycinającymi (`renderer.localClippingEnabled`). W miejscu cięcia leży płaska tarcza z koncentrycznymi warstwami
   (skorupa, płaszcz, jądro). Ich promienie są liczone dla odległości płaszczyzny od środka, więc cięcie z boku
@@ -195,8 +197,8 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
   foveation, kilkadziesiąt wywołań rysowania na klatkę.
 
 - **Tryb 6:** zamiast przesuwać kamerę, aplikacja skaluje obiekty. `log10(ile metrów naprawdę = 1 m w goglach)`
-  zmienia się płynnie, a środek rzędu przesuwa się od obiektu do obiektu. Obiekty mniejsze niż 4 mm
-  i większe niż 60 m (w goglach) płynnie znikają.
+  zmienia się płynnie. Obiekty stoją na łuku: każdy zajmuje tyle stopni, ile wynosi jego rozmiar kątowy, więc się
+  nie zasłaniają, a większe stoją dalej. Obiekty mniejsze niż 4 mm i większe niż 60 m (w goglach) płynnie znikają.
 - **Ludziki na planecie z modelu:** trójkąty planety są posortowane w siatkę 128 × 64 kierunków, więc „promień od
   środka” sprawdza tylko kilkadziesiąt trójkątów. Model jest dwuwarstwową skorupą, więc grunt to drugie trafienie.
   Woda jest rozpoznawana po kolorze tekstury (niebieskie = morze).
