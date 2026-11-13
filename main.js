@@ -19,7 +19,7 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // =====================================================================
 //  KONFIGURACJA
@@ -40,6 +40,7 @@ const MOON_MAX_DEG_S = 90;                     // obieg księżyców: maks. wido
 const ORBIT_HIDE_SCALE = 1e5;                  // powyżej tej skali orbity planet są ukrywane (i tak są wtedy prostymi liniami)
 const STICK_ZOOM_RATE = 6;                     // gałka: powiększenie ×6 na sekundę przy pełnym wychyleniu
 const STICK_DEADZONE = 0.15;                   // martwa strefa gałki
+const STICK_TURN_DEG_S = 70;                   // gałka lewo/prawo: obrót układu wokół trzymanej planety [°/s]
 
 // "Leć do planety" (grip/ściśnięcie przy wskazaniu planety promieniem)
 const FOCUS_BODY_RADIUS_M = 0.12;      // planeta po przylocie ma taki promień [m]
@@ -166,12 +167,19 @@ const LAYERS = {
                { name: 'Jądro węglowo-tlenowe', f: 0.980, color: '#ffd890' }, { name: 'Skrystalizowane centrum (w chłodnych karłach)', f: 0.500, color: '#ffffff' } ],
 };
 
+// --- Tryb 3: planeta generowana w kodzie (true = zamiast tego model models/small_planet.glb) ---
+const MODE3_USE_MODEL_PLANET_FILE = false;
+const MODE3_PLANET_DETAIL = 64;        // gęstość siatki planety (64 ≈ 83 tys. trójkątów); mniej = szybciej
+const MODE3_SEA_LEVEL = 0.0;           // poziom morza w "wysokości" szumu: więcej = więcej oceanów
+const MODE3_MOUNTAIN_HEIGHT = 0.07;    // najwyższe góry jako ułamek promienia planety
+const MODE3_TREE_COUNT = 450;          // drzewka na lądzie (jedna "instancja" – tanie)
+
 // --- Modele 3D (.glb w folderze models/) ----------------------------------
 //  Jeśli pliku nie ma, aplikacja używa prostych kształtów z kodu.
 const MODEL_PATH = 'models/';
 const MODEL_FILES = {
   earth: 'earth.glb',               // Ziemia z teksturą – używana we wszystkich trybach
-  smallPlanet: 'small_planet.glb',  // planeta Trybu 3
+  ...(MODE3_USE_MODEL_PLANET_FILE ? { smallPlanet: 'small_planet.glb' } : {}),   // planeta Trybu 3 z pliku (opcjonalnie)
   person: 'person.glb',             // ludzik ze szkieletem i animacją chodu (Tryb 3 i Tryb 6)
 };
 const MODEL_LOAD_TIMEOUT_S = 40;    // po tylu sekundach przestajemy czekać na model
@@ -190,13 +198,20 @@ const MODE3_PERSON_SPEED_MPS = 0.015;  // prędkość marszu przy skali 1 [m/s]
 const MODE3_TURN_NOISE = 1.5;          // jak bardzo ludziki skręcają losowo (0 = idą prosto)
 const MODE3_RUN_SPEED_FACTOR = 2.6;    // bieg jest tyle razy szybszy od marszu
 // Zachowanie ludzików: [czynność, szansa wyboru, min. czas, maks. czas [s]]
-const MODE3_BEHAVIOR = [['walk', 0.55, 4, 12], ['idle', 0.3, 2, 7], ['run', 0.15, 2, 5]];
+//  walk – chód, run – bieg, idle – stanie i rozglądanie się, wave – machanie (w Twoją stronę),
+//  squat – kucnięcie, social – podchodzi do kogoś w pobliżu i rozmawia (tak tworzą się grupki)
+const MODE3_BEHAVIOR = [['walk', 0.36, 4, 12], ['idle', 0.1, 2, 6], ['run', 0.1, 2, 5], ['wave', 0.12, 2.5, 4.5],
+  ['squat', 0.1, 3, 6], ['social', 0.22, 5, 10]];
+const MODE3_SOCIAL_RANGE_RAD = 0.4;    // jak daleko (kąt na planecie) ludzik szuka rozmówcy
 const MODE3_AVOID_WATER = true;
 const MODE3_CLOUD_COUNT = 14;          // chmurki nad planetą
 const MODE3_CLOUD_HEIGHT = 1.12;       // wysokość chmur jako ułamek promienia planety (1 = powierzchnia)
 const MODE3_CLOUD_SPEED_DEG_S = 3;     // jak szybko chmury przesuwają się nad planetą
-const MODE3_MINI_COSMOS = true;        // kreskówkowe słoneczko i planetki w tle        // ludziki omijają morza (planeta z modelu: wykrywanie po kolorze tekstury)
-const MODE3_PLANET_SPIN_DEG_S = 0;     // samodzielny obrót planety [stopnie/s] (0 = stoi)
+const MODE3_MINI_COSMOS = true;        // Słońce i planetki z kontynentami w tle
+const MODE3_YEAR_S = 240;              // tyle sekund trwa "rok" – obieg wokół Słońca (dzień i noc na planecie)
+const MODE3_SUN_LIGHT = 2.4;           // jasność światła Słońca
+const MODE3_AMBIENT = 0.45;            // światło otoczenia (nocna strona nie jest czarna)        // ludziki omijają morza (planeta z modelu: wykrywanie po kolorze tekstury)
+const MODE3_PLANET_SPIN_DEG_S = 2;     // obrót planety wokół osi [stopnie/s] (0 = stoi)
 const MODE3_PULL_GAP_M = 0.15;         // planeta przyciągnięta promieniem zatrzymuje się tyle przed dłonią [m]
 const MODE3_SCALE_MIN = 0.1;           // minimalna skala planety
 const MODE3_SCALE_MAX = 40;            // maksymalna skala (40 m planeta, ludzik 40 cm)
@@ -241,7 +256,7 @@ const SCALE_GAP_DEG = 5;              // odstęp kątowy między sąsiednimi obi
 const SCALE_DEPTH_FACTOR = 0.8;       // większe obiekty stoją dalej: odległość = SCALE_DISTANCE_M + rozmiar × to
 const SCALE_NEIGHBORS = 2.6;          // ile obiektów w każdą stronę widać jednocześnie
 const SCALE_TURN_DEG_S = 10;         // obiekty powoli obracają się, by pokazać kształt
-const SCALE_MANUAL_TURN_DEG_S = 90;   // obracanie obiektu gałką (lewo/prawo; lewa gałka góra/dół = pochylenie)
+const SCALE_VIEW_TURN_DEG_S = 60;     // gałka lewo/prawo obraca łuk obiektów wokół Ciebie (bez kręcenia głową)
 // sizeM = rozmiar w metrach (wymiar opisany w sizeText); kolejność od najmniejszego.
 // Kolejne obiekty różnią się najwyżej ~30×, więc zawsze widać trzy porównywalne obok siebie.
 const SCALE_OBJECTS = [
@@ -285,6 +300,15 @@ const SCALE_OBJECTS = [
   { id: 'mwmc', name: 'Droga Mleczna i Obłoki Magellana', sizeM: 3.8e21, sizeText: 'ok. 400 000 lat świetlnych', fact: 'Obłoki Magellana to galaktyki karłowate krążące wokół naszej Galaktyki.' },
   { id: 'localgroup', name: 'Grupa Lokalna galaktyk', sizeM: 9.5e22, sizeText: 'ok. 10 mln lat świetlnych', fact: 'Ponad 80 galaktyk; Droga Mleczna i Andromeda zderzą się za ok. 4,5 mld lat.' },
 ];
+
+// --- Tryb 7: Droga Mleczna – od całej Galaktyki do Słońca ---------------------
+const MW_POINTS = 140000;              // gwiazdy (punkty) tworzące Galaktykę
+const MW_START_SIZE_M = 2.4;           // na starcie cała Galaktyka (100 000 lat św.) ma tyle metrów
+const MW_DISTANCE_M = 1.3;             // Słońce (punkt, wokół którego jest zoom) tyle przed oczami
+const MW_TILT_DEG = 40;                // pochylenie dysku Galaktyki w Twoją stronę
+const MW_BRIGHTNESS = 0.6;             // jasność gwiazd Galaktyki (sumują się – za dużo = biała plama)
+const MW_ZOOM_RATE = 1.6;              // gałka: tyle rzędów wielkości (×10) na sekundę
+const MW_SCALE_MAX = 3e6;              // największe przybliżenie [m na rok świetlny] – Słońce ma wtedy ok. 0,4 m
 
 // --- Menu (panel w VR) ------------------------------------------------
 const MENU_WIDTH_M = 0.48;          // szerokość panelu [m]
@@ -492,6 +516,8 @@ const state = {
   knife: false,          // Tryby 2/4: nóż włączony
   shelfHover: new Set(), // Tryby 2/4: wskazane obiekty (pokazują tabliczkę)
   placed: {},            // czy tryb został już ułożony przed użytkownikiem
+  m5Hands: new Set(),    // Tryb 5: dłonie z wciśniętym spustem (zoom dwiema rękami)
+  m5Pinch: null,
 };
 
 // =====================================================================
@@ -1352,7 +1378,7 @@ const MODE1_GRAB = { minScale: SYSTEM_SCALE_MIN, maxScale: SYSTEM_SCALE_MAX, one
 const SHELF_GRAB = { minScale: MODE2_SCALE_MIN, maxScale: MODE2_SCALE_MAX, oneHand: 'lever' };
 const SHELF_GRAB_REMOTE = { minScale: MODE2_SCALE_MIN, maxScale: MODE2_SCALE_MAX, oneHand: 'remote' };
 const MODE3_GRAB = { minScale: MODE3_SCALE_MIN, maxScale: MODE3_SCALE_MAX, oneHand: 'lever' };
-const MODE5_GRAB = { minScale: MODE5_SCALE_MIN, maxScale: MODE5_SCALE_MAX, oneHand: 'remote' };   // obrót wokół siebie; 2 ręce = zoom
+// Tryb 5: bez chwytania i obracania – tylko zoom (gałka albo rozsuwanie obu dłoni ze spustami)
 const MENU_GRAB = { minScale: 1, maxScale: 1, oneHand: 'lever', single: true };
 
 // =====================================================================
@@ -1499,8 +1525,8 @@ function updateFocus(dt) {
 }
 
 // Powiększenie układu wokół punktu (gałka, klawisze +/-)
-function zoomSystemAround(pivot, factor) {
-  state.track = null;
+function zoomSystemAround(pivot, factor, keepTrack = false) {
+  if (!keepTrack) state.track = null;
   const s0 = systemGroup.scale.x;
   const s1 = THREE.MathUtils.clamp(s0 * factor, SYSTEM_SCALE_MIN, SYSTEM_SCALE_MAX);
   const r = s1 / s0;
@@ -2149,16 +2175,124 @@ function updateShelfAnimations(shelf, dt) {
 const mode3Group = new THREE.Group();
 mode3Group.visible = false;
 scene.add(mode3Group);
-const mode3Light = makeHeadlight(mode3Group);
+const mode3Light = (() => {                        // słabe światło "z głowy" + otoczenie; główne światło daje Słońce
+  mode3Group.add(new THREE.AmbientLight(0xffffff, MODE3_AMBIENT));
+  const l = new THREE.DirectionalLight(0xffffff, 0.55);
+  mode3Group.add(l, l.target);
+  return l;
+})();
 
 const m3Planet = new THREE.Group();              // to chwytamy; ludziki są jego dziećmi -> rosną razem z nim
 m3Planet.userData.throwable = true;
 mode3Group.add(m3Planet);
 const M3_R = MODE3_PLANET_DIAMETER_M / 2;
 
+// ---------- Planety generowane w kodzie (szum fraktalny): kontynenty, góry, śnieg, oceany ----------
+function makeNoise3(seed) {
+  const rnd = seededRandom(seed);
+  const perm = new Uint8Array(512), val = new Float32Array(256);
+  const p = Array.from({ length: 256 }, (_, i) => i);
+  for (let i = 255; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
+  for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+  for (let i = 0; i < 256; i++) val[i] = rnd() * 2 - 1;
+  const f = t => t * t * t * (t * (t * 6 - 15) + 10);
+  const L = (a, b, t) => a + (b - a) * t;
+  const n = (x, y, z) => {
+    const X = Math.floor(x), Y = Math.floor(y), Z = Math.floor(z);
+    const xf = x - X, yf = y - Y, zf = z - Z, u = f(xf), v = f(yf), w = f(zf);
+    const h = (i, j, k) => val[perm[perm[perm[(X + i) & 255] + ((Y + j) & 255)] + ((Z + k) & 255)]];
+    return L(L(L(h(0, 0, 0), h(1, 0, 0), u), L(h(0, 1, 0), h(1, 1, 0), u), v),
+             L(L(h(0, 0, 1), h(1, 0, 1), u), L(h(0, 1, 1), h(1, 1, 1), u), v), w);
+  };
+  return (x, y, z, octaves = 5) => {                 // szum fraktalny (kilka "oktaw" coraz drobniejszych szczegółów)
+    let sum = 0, amp = 0.5, fr = 1;
+    for (let o = 0; o < octaves; o++) { sum += amp * n(x * fr + 31.4 * o, y * fr, z * fr); amp *= 0.5; fr *= 2.03; }
+    return sum;
+  };
+}
+
+// Palety kolorów: [wysokość od, kolor]
+const PLANET_PALETTES = {
+  earth: { ocean: 0x2a72c8, floor: 0x1d4f8c, bands: [[0, 0xe6d6a2], [0.03, 0x5fae4a], [0.16, 0x3f8a3a], [0.3, 0x8a7f72], [0.45, 0xf4f6fa]], polar: true },
+  desert: { ocean: null, floor: 0xc89a5a, bands: [[-1, 0xb8804a], [0, 0xd8aa66], [0.15, 0xc48a52], [0.3, 0x9a6a44]], polar: false },
+  ice: { ocean: 0x7fb8e8, floor: 0x5f8fbf, bands: [[0, 0xdfeaf4], [0.1, 0xf6faff]], polar: true },
+  green: { ocean: 0x2f8fb0, floor: 0x1f6080, bands: [[0, 0xd8d090], [0.03, 0x6cc04a], [0.2, 0x4a9a3a], [0.38, 0xf0f4f0]], polar: true },
+};
+
+// Zwraca { group, height(dir) -> h, radiusAt(h) } – planetę o promieniu R
+function makeProceduralPlanet(R, seed, paletteName, detail, mountain = MODE3_MOUNTAIN_HEIGHT) {
+  const pal = PLANET_PALETTES[paletteName];
+  const noise = makeNoise3(seed);
+  const height = d => noise(d.x * 1.7, d.y * 1.7, d.z * 1.7) * 1.15 - MODE3_SEA_LEVEL + 0.04 * noise(d.x * 9, d.y * 9, d.z * 9, 2);
+  const radiusAt = h => (h > 0 || !pal.ocean ? 1 + Math.max(h, -0.2) * mountain : 1 + h * 0.03) * R;
+  let geo = new THREE.IcosahedronGeometry(1, detail);
+  geo.deleteAttribute('normal'); geo.deleteAttribute('uv');
+  geo = mergeVertices(geo);
+  const pos = geo.attributes.position, colors = new Float32Array(pos.count * 3);
+  const d = new THREE.Vector3(), c = new THREE.Color(), c2 = new THREE.Color();
+  const jitter = makeNoise3(seed + 'c');
+  for (let i = 0; i < pos.count; i++) {
+    d.fromBufferAttribute(pos, i).normalize();
+    const h = height(d);
+    pos.setXYZ(i, d.x * radiusAt(h), d.y * radiusAt(h), d.z * radiusAt(h));
+    if (h < 0 && pal.ocean) c.setHex(pal.floor);
+    else {
+      let k = 0;
+      while (k + 1 < pal.bands.length && h > pal.bands[k + 1][0]) k++;
+      c.setHex(pal.bands[k][1]);
+      if (k + 1 < pal.bands.length) {               // płynne przejście między strefami
+        const t = THREE.MathUtils.clamp((h - pal.bands[k + 1][0]) / 0.03 + 1, 0, 1);
+        c.lerp(c2.setHex(pal.bands[k + 1][1]), t * 0.6);
+      }
+    }
+    if (pal.polar && Math.abs(d.y) > 0.86 + 0.05 * jitter(d.x * 4, d.y * 4, d.z * 4, 2)) c.setHex(0xf4f6fa);   // czapy polarne
+    const v = 0.92 + 0.16 * jitter(d.x * 14, d.y * 14, d.z * 14, 2);
+    colors.set([c.r * v, c.g * v, c.b * v], i * 3);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 })));
+  if (pal.ocean) {
+    const water = new THREE.Mesh(new THREE.IcosahedronGeometry(R, Math.min(detail, 24)), new THREE.MeshStandardMaterial({
+      color: pal.ocean, roughness: 0.25, metalness: 0.05, transparent: true, opacity: 0.88,
+    }));
+    group.add(water);
+  }
+  return { group, height, radiusAt, hasOcean: !!pal.ocean };
+}
+
 // Powierzchnia planety: promień gruntu i "czy to woda" w danym kierunku (w układzie planety, skala 1)
 let m3Surface;
-if (models.smallPlanet) {
+let m3Proc = null;
+if (!models.smallPlanet) {
+  m3Proc = makeProceduralPlanet(M3_R, 'swiat', 'earth', MODE3_PLANET_DETAIL);
+  m3Planet.add(m3Proc.group);
+  // powierzchnia liczona wprost ze wzoru – dokładnie i bez kosztownego "strzelania promieniami"
+  m3Surface = { query: d => { const h = m3Proc.height(d); return { r: m3Proc.radiusAt(Math.max(h, 0)), water: h < 0.012 }; } };
+  // drzewka: pień + korona, po jednej instancji na cały las
+  const rnd = seededRandom('trees');
+  const trunkGeo = new THREE.CylinderGeometry(0.06, 0.09, 0.4, 5).translate(0, 0.2, 0);
+  const crownGeo = new THREE.ConeGeometry(0.28, 0.75, 7).translate(0, 0.72, 0);
+  const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 0.9 }), MODE3_TREE_COUNT);
+  const crowns = new THREE.InstancedMesh(crownGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }), MODE3_TREE_COUNT);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), col = new THREE.Color();
+  let n = 0;
+  for (let tries = 0; n < MODE3_TREE_COUNT && tries < MODE3_TREE_COUNT * 30; tries++) {
+    const d = new THREE.Vector3(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize();
+    const h = m3Proc.height(d);
+    if (h < 0.04 || h > 0.3 || Math.abs(d.y) > 0.8) continue;
+    q.setFromUnitVectors(UP, d).multiply(new THREE.Quaternion().setFromAxisAngle(UP, rnd() * 6.3));
+    sc.setScalar(0.012 + rnd() * 0.014);
+    m.compose(d.clone().multiplyScalar(m3Proc.radiusAt(h) - 0.001), q, sc);
+    trunks.setMatrixAt(n, m); crowns.setMatrixAt(n, m);
+    crowns.setColorAt(n, col.setHSL(0.27 + rnd() * 0.08, 0.55, 0.22 + rnd() * 0.12));
+    n++;
+  }
+  trunks.count = crowns.count = n;
+  crowns.instanceColor.needsUpdate = true;
+  m3Planet.add(trunks, crowns);
+} else if (models.smallPlanet) {
   const root = models.smallPlanet.scene;
   let mesh = null;
   root.traverse(o => { if (o.isMesh && !mesh) mesh = o; });
@@ -2313,7 +2447,39 @@ function makePersonModel(heightM, rnd = Math.random, animation = PERSON_ANIMATIO
     if (current) current.crossFadeTo(next, fade, false);
     current = next;
   };
-  return { root: holder, mixer, play };
+  // kości do ruchów układanych w kodzie (machanie, kucanie, gesty)
+  const bones = {};
+  c.traverse(o => {
+    if (!o.isBone) return;
+    for (const k of ['Hips', 'Spine', 'Head', 'RightArm', 'RightForeArm', 'LeftArm', 'LeftForeArm', 'LeftUpLeg', 'RightUpLeg', 'LeftLeg', 'RightLeg']) {
+      if (o.name.endsWith(k) && !(k === 'RightArm' && o.name.endsWith('ForeArm')) && !(k === 'LeftArm' && o.name.endsWith('ForeArm'))) bones[k] = o;
+    }
+  });
+  return { root: holder, mixer, play, bones };
+}
+
+// Ruchy dokładane do animacji stania: machanie, kucanie, gestykulacja przy rozmowie.
+// o = siła każdego ruchu (0..1, płynnie narasta i zanika); kąty dobrane do szkieletu Mixamo.
+const _eul = new THREE.Euler(), _qo = new THREE.Quaternion();
+function applyPersonOverlay(P) {
+  const b = P.model.bones, o = P.ov, t = P.time;
+  const rot = (bone, x, y, z) => { if (bone) bone.quaternion.multiply(_qo.setFromEuler(_eul.set(x, y, z))); };
+  if (o.wave > 0.01) {
+    rot(b.RightArm, 0, 0, 1.5 * o.wave);
+    rot(b.RightForeArm, 0, 0, (1.4 + 0.45 * Math.sin(t * 9)) * o.wave);
+  }
+  if (o.squat > 0.01) {
+    if (b.Hips) b.Hips.position.y -= 40 * o.squat;
+    rot(b.LeftUpLeg, -1.3 * o.squat, 0, 0); rot(b.RightUpLeg, -1.3 * o.squat, 0, 0);
+    rot(b.LeftLeg, 1.9 * o.squat, 0, 0); rot(b.RightLeg, 1.9 * o.squat, 0, 0);
+    rot(b.Spine, 0.25 * o.squat, 0, 0);
+  }
+  if (o.talk > 0.01) {
+    const speaking = Math.sin(t * 0.7 + P.phase) > 0;     // na zmianę: mówi i słucha
+    rot(b.RightArm, 0, 0, 0.35 * o.talk);
+    rot(b.RightForeArm, (speaking ? 1.1 + 0.3 * Math.sin(t * 4 + P.phase) : 0.4) * o.talk, 0, 0);
+    rot(b.Head, (speaking ? 0.06 * Math.sin(t * 5) : 0.12 * Math.sin(t * 2.2)) * o.talk, 0, 0);
+  }
 }
 
 function pickBehavior(rnd = Math.random) {
@@ -2340,7 +2506,7 @@ const people = [];
     if (f.lengthSq() < 1e-4) f.set(1, 0, 0).addScaledVector(p, -p.x);
     f.normalize();
     const P = { p, f, r: m3Surface.query(p).r, speed: MODE3_PERSON_SPEED_MPS * (0.7 + rnd() * 0.6), turn: 0, phase: rnd() * 6, avoid: 0, checkIn: rnd() * 0.2,
-      action: 'walk', actionT: 2 + rnd() * 8 };
+      action: 'walk', actionT: 2 + rnd() * 8, ov: { wave: 0, squat: 0, talk: 0 }, time: rnd() * 10, target: null };
     const model = makePersonModel(MODE3_PERSON_HEIGHT_M, rnd);
     if (model) {
       P.model = model;
@@ -2376,75 +2542,109 @@ const m3Clouds = new THREE.Group();
   m3Planet.add(m3Clouds);
 }
 
-// --- Kreskówkowy mini-kosmos w tle: uśmiechnięte słoneczko i kolorowe planetki ---
+// --- Mini-układ w tle: prawdziwe (miniaturowe) Słońce i planetki z kontynentami.
+//     Słońce z planetkami powoli krąży wokół Twojej planety (widok "z planety"), więc na planecie
+//     zmienia się dzień i noc. Światło pada od Słońca.
 const m3Cosmos = new THREE.Group();
-const m3CosmosParts = { rays: null, orbits: [] };
+const m3CosmosParts = { orbit: new THREE.Group(), spinners: [], sun: null, sunLight: null };
 if (MODE3_MINI_COSMOS) {
   mode3Group.add(m3Cosmos);
+  m3Cosmos.add(m3CosmosParts.orbit);
   const sun = new THREE.Group();
-  sun.position.set(-3.4, 1.4, -4.6);                 // w lewo, w górę i do tyłu od planety
-  m3Cosmos.add(sun);
-  sun.add(new THREE.Mesh(sphereGeometryHi, new THREE.MeshBasicMaterial({ color: 0xffc928 })));
-  sun.children[0].scale.setScalar(0.55);
-  const cone = new THREE.ConeGeometry(0.09, 0.28, 8);
-  const rays = mergedMesh(Array.from({ length: 12 }, (_, i) => {
-    const a = i / 12 * Math.PI * 2, d = new THREE.Vector3(Math.cos(a), Math.sin(a), 0);
-    return placedGeometry(cone, d, 0.72);
-  }), new THREE.MeshBasicMaterial({ color: 0xffa21a }));
-  sun.add(rays);
-  m3CosmosParts.rays = rays;
-  const black = new THREE.MeshBasicMaterial({ color: 0x3a2200 });
-  for (const sx of [-1, 1]) sun.add(ellipsoid(black, 0.05, 0.08, 0.03, sx * 0.17, 0.12, 0.53));   // oczy
-  const smile = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.025, 8, 24, Math.PI), black);
-  smile.rotation.z = Math.PI; smile.position.set(0, -0.02, 0.52);
-  sun.add(smile, makeGlowSprite(0xffb030, 2.6, 0.55));
+  sun.position.set(-3.6, 1.2, -4.4);
+  m3CosmosParts.orbit.add(sun);
+  m3CosmosParts.sun = sun;
+  const sunBody = new THREE.Mesh(sphereGeometryHi, new THREE.MeshBasicMaterial({ map: placeholderTexture(BODIES[0]), color: 0xffe2a0 }));
+  sunBody.scale.setScalar(0.5);
+  useTextureFile(sunBody.material, '2k_sun.jpg');
+  sun.add(sunBody, makeGlowSprite(0xffd27a, 1.8, 0.85), makeGlowSprite(0xff9a30, 3.6, 0.3, softGlowTexture));
+  m3CosmosParts.spinners.push({ obj: sunBody, speed: 0.05 });
   const planets = [
-    { r: 0.16, color: 0x5ec2ff, orbit: 1.3, period: 40 },
-    { r: 0.22, color: 0xff7a8a, orbit: 2.0, period: 65, ring: 0xffd1dc },
-    { r: 0.3, color: 0x9b6bff, orbit: 2.9, period: 95, moon: 0xdddddd },
-    { r: 0.12, color: 0x7ee08a, orbit: 3.6, period: 120 },
-    { r: 0.2, color: 0xffb35a, orbit: 4.4, period: 160, bands: true },
+    { r: 0.13, palette: 'earth', orbit: 1.2, period: 50 },
+    { r: 0.17, palette: 'desert', orbit: 1.8, period: 80 },
+    { r: 0.21, palette: 'green', orbit: 2.6, period: 120, moon: true },
+    { r: 0.11, palette: 'ice', orbit: 3.2, period: 160 },
+    { r: 0.19, palette: 'earth', orbit: 3.9, period: 210, ring: true },
   ];
-  const plane = new THREE.Group();                   // płaszczyzna orbit lekko pochylona do patrzącego
-  plane.rotation.x = 0.35;
+  const plane = new THREE.Group();
+  plane.rotation.x = 0.3;
   sun.add(plane);
   planets.forEach((pd, i) => {
     const orbit = new THREE.Group();
-    orbit.rotation.y = i * 1.7;
+    orbit.rotation.y = i * 1.9;
     plane.add(orbit);
-    let map = null;
-    if (pd.bands) {
-      const [canvas, ctx] = makeCanvas(64, 64);
-      for (let y = 0; y < 64; y += 8) { ctx.fillStyle = y % 16 ? '#ffb35a' : '#ff8a3a'; ctx.fillRect(0, y, 64, 8); }
-      map = canvasTexture(canvas);
-    }
-    const body = new THREE.Mesh(sphereGeometry, new THREE.MeshToonMaterial({ color: map ? 0xffffff : pd.color, map }));
-    body.scale.setScalar(pd.r);
-    body.position.x = pd.orbit;
-    orbit.add(body);
+    const pl = makeProceduralPlanet(pd.r, 'mini' + i, pd.palette, 20, 0.08);
+    pl.group.position.x = pd.orbit;
+    pl.group.rotation.z = 0.4;
+    orbit.add(pl.group);
     if (pd.ring) {
-      const ring = new THREE.Mesh(new THREE.RingGeometry(1.4, 2.0, 40), new THREE.MeshToonMaterial({ color: pd.ring, side: THREE.DoubleSide }));
-      ring.rotation.x = -Math.PI / 2 + 0.4;
-      body.add(ring);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(pd.r * 1.4, pd.r * 2.1, 48), new THREE.MeshStandardMaterial({ color: 0xd8c8a8, side: THREE.DoubleSide, transparent: true, opacity: 0.75 }));
+      ring.rotation.x = -Math.PI / 2;
+      pl.group.add(ring);
     }
     if (pd.moon) {
       const moonPivot = new THREE.Group();
-      body.add(moonPivot);
-      const moon = new THREE.Mesh(sphereGeometry, new THREE.MeshToonMaterial({ color: pd.moon }));
-      moon.scale.setScalar(0.25);
-      moon.position.x = 1.8;
+      pl.group.add(moonPivot);
+      const moon = new THREE.Mesh(sphereGeometry, new THREE.MeshStandardMaterial({ map: placeholderTexture(MOONS.earth[0]), roughness: 0.9 }));
+      moon.scale.setScalar(pd.r * 0.27);
+      moon.position.x = pd.r * 2.2;
       moonPivot.add(moon);
-      m3CosmosParts.orbits.push({ obj: moonPivot, speed: 1.2 });
+      m3CosmosParts.spinners.push({ obj: moonPivot, speed: 0.8 });
     }
-    m3CosmosParts.orbits.push({ obj: orbit, speed: Math.PI * 2 / pd.period }, { obj: body, speed: 0.8 + i * 0.2 });
+    const mo = makeCircleLineXZ(pd.orbit, 96, 0xffffff, 0.12);
+    plane.add(mo);
+    m3CosmosParts.spinners.push({ obj: orbit, speed: Math.PI * 2 / pd.period }, { obj: pl.group, speed: 0.6 + i * 0.15 });
   });
+  // światło od Słońca (dzień i noc na planecie)
+  const light = new THREE.DirectionalLight(0xfff2dd, MODE3_SUN_LIGHT);
+  mode3Group.add(light, light.target);
+  m3CosmosParts.sunLight = light;
 }
 
 function updateMode3Extras(dt) {
   m3Clouds.rotation.y += MODE3_CLOUD_SPEED_DEG_S * DEG * dt;
   if (!MODE3_MINI_COSMOS) return;
-  m3CosmosParts.rays.rotation.z += 0.3 * dt;
-  for (const o of m3CosmosParts.orbits) o.obj.rotation.y += o.speed * dt;
+  m3CosmosParts.orbit.rotation.y += Math.PI * 2 / MODE3_YEAR_S * dt;     // Słońce "obiega" planetę = planeta obiega Słońce
+  for (const o of m3CosmosParts.spinners) o.obj.rotation.y += o.speed * dt;
+  const L = m3CosmosParts.sunLight;
+  m3CosmosParts.sun.getWorldPosition(L.position);
+  L.target.position.copy(m3Planet.position);
+}
+
+// Nowa czynność ludzika (z animacją)
+function startBehavior(P, action, duration) {
+  if (action === 'social') {                         // znajdź kogoś w pobliżu (także już rozmawiającą grupkę)
+    let best = null, bestA = MODE3_SOCIAL_RANGE_RAD;
+    for (const Q of people) {
+      if (Q === P || !['walk', 'idle', 'talk', 'approach'].includes(Q.action)) continue;
+      const a = P.p.angleTo(Q.p);
+      if (a < bestA) { bestA = a; best = Q; }
+    }
+    if (!best) { action = 'walk'; duration = 4; }
+    else {
+      P.target = best;
+      action = 'approach'; duration = 14;
+      if (best.action === 'walk' || best.action === 'idle') { best.target = P; best.action = 'approach'; best.actionT = 14; best.model && best.model.play(PERSON_ANIMATION); }
+    }
+  }
+  if (action === 'talk' && P.target && P.target.action === 'approach' && P.target.target === P) {
+    P.target.action = 'talk'; P.target.actionT = duration; P.target.model && P.target.model.play(PERSON_IDLE_ANIMATION);
+  }
+  P.action = action;
+  P.actionT = duration;
+  if (!P.model) return;
+  P.model.play(action === 'run' ? PERSON_RUN_ANIMATION : (action === 'walk' || action === 'approach') ? PERSON_ANIMATION : PERSON_IDLE_ANIMATION);
+}
+// Obróć ludzika (płynnie) w stronę punktu na planecie
+function faceToward(P, targetDir, k) {
+  const g = _v4.copy(targetDir).addScaledVector(P.p, -targetDir.dot(P.p));
+  if (g.lengthSq() < 1e-8) return;
+  P.f.lerp(g.normalize(), Math.min(1, k)).addScaledVector(P.p, -P.f.dot(P.p)).normalize();
+}
+// Kierunek do Twoich oczu w układzie planety (ludziki machają w Twoją stronę)
+const _eyeLocal = new THREE.Vector3();
+function eyeOnPlanet() {
+  return _eyeLocal.copy(eyePos).applyMatrix4(_m3.copy(m3Planet.matrixWorld).invert()).normalize();
 }
 
 const _right = new THREE.Vector3();
@@ -2454,14 +2654,24 @@ function updatePeople(dt) {
   _scale.setScalar(H);
   for (let i = 0; i < N3; i++) {
     const P = people[i];
-    // co jakiś czas zmiana czynności: chód, bieg albo postój (rozglądanie się)
+    P.time += dt;
+    // co jakiś czas zmiana czynności
     P.actionT -= dt;
-    if (P.actionT <= 0) {
-      [P.action, P.actionT] = pickBehavior();
-      if (P.model) P.model.play(P.action === 'run' ? PERSON_RUN_ANIMATION : P.action === 'idle' ? PERSON_IDLE_ANIMATION : PERSON_ANIMATION);
+    if (P.actionT <= 0) startBehavior(P, ...pickBehavior());
+    if (P.action === 'approach') {                   // idzie do rozmówcy; na miejscu – rozmowa
+      const T = P.target;
+      if (!T || T.action === 'walk' || T.action === 'run') startBehavior(P, 'walk', 4);
+      else if (P.p.angleTo(T.p) < MODE3_PERSON_HEIGHT_M * 2.4 / M3_R) startBehavior(P, 'talk', 5 + Math.random() * 5);
+      else faceToward(P, T.p, dt * 5);
     }
-    const speedK = P.action === 'run' ? MODE3_RUN_SPEED_FACTOR : P.action === 'idle' ? 0 : 1;
+    if (P.action === 'talk' && P.target) faceToward(P, P.target.p, dt * 3);
+    if (P.action === 'wave') faceToward(P, eyeOnPlanet(), dt * 3);
+    const speedK = P.action === 'run' ? MODE3_RUN_SPEED_FACTOR : (P.action === 'walk' || P.action === 'approach') ? 1 : 0;
     const v = P.speed * speedK;
+    for (const k of ['wave', 'squat', 'talk']) {     // płynne narastanie/zanikanie ruchów
+      const goal = P.action === k ? 1 : 0;
+      P.ov[k] += THREE.MathUtils.clamp(goal - P.ov[k], -dt * 2.5, dt * 2.5);
+    }
     // marsz "prosto przed siebie" = obrót po wielkim kole planety
     _right.crossVectors(P.p, P.f).normalize();
     _q1.setFromAxisAngle(_right, v * dt / M3_R);
@@ -2477,7 +2687,8 @@ function updatePeople(dt) {
     }
     if (P.avoid > 0) P.avoid -= dt;
     else P.turn = THREE.MathUtils.clamp(P.turn + (Math.random() - 0.5) * MODE3_TURN_NOISE * dt * 4, -1.2, 1.2) * (1 - 0.5 * dt);
-    _q1.setFromAxisAngle(P.p, P.turn * dt * (speedK > 0 ? 1 : 0.3));
+    const wander = P.action === 'walk' || P.action === 'run' ? 1 : P.action === 'idle' ? 0.3 : 0;
+    _q1.setFromAxisAngle(P.p, P.turn * dt * wander);
     P.f.applyQuaternion(_q1);
     P.f.addScaledVector(P.p, -P.f.dot(P.p)).normalize();
     P.phase += v * dt / (MODE3_PERSON_HEIGHT_M * 0.35);
@@ -2490,6 +2701,7 @@ function updatePeople(dt) {
       P.model.root.matrix.makeBasis(_right, P.p, P.f).setPosition(_v1);
       P.model.root.matrixWorldNeedsUpdate = true;
       P.model.mixer.update(dt * (speedK === 1 ? P.speed / MODE3_PERSON_SPEED_MPS : 1));
+      applyPersonOverlay(P);
       continue;
     }
     _m1.makeBasis(_right, P.p, P.f).scale(_scale).setPosition(_v1);
@@ -2549,12 +2761,12 @@ mode5Group.add(mode5Labels);
 
 // Obrazki galaktyk (rysowane na czarnym tle, dodawane światłem – czarne = przezroczyste)
 function makeGalaxyTexture(kind, seed) {
-  const S = 256, c = S / 2;
+  const S = 512, c = S / 2, q = S / 256;              // 512 px – ostrzejsze galaktyki z bliska
   const [canvas, ctx] = makeCanvas(S, S);
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, S, S);
   ctx.globalCompositeOperation = 'lighter';
   const rnd = seededRandom(seed), gauss = gaussian(rnd);
-  const dot = (x, y, r, rgb, a) => { ctx.fillStyle = `rgba(${rgb},${a})`; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); };
+  const dot = (x, y, r, rgb, a) => { ctx.fillStyle = `rgba(${rgb},${a})`; ctx.beginPath(); ctx.arc(x, y, r * q, 0, Math.PI * 2); ctx.fill(); };
   const bulge = (r, a) => {
     const g = ctx.createRadialGradient(c, c, 0, c, c, r);
     g.addColorStop(0, `rgba(255,245,215,${a})`);
@@ -2568,7 +2780,7 @@ function makeGalaxyTexture(kind, seed) {
   } else if (kind === 'irregular') {
     for (let k = 0; k < 10; k++) {
       const cx = c + gauss() * c * 0.25, cy = c + gauss() * c * 0.2;
-      for (let i = 0; i < 70; i++) dot(cx + gauss() * 10, cy + gauss() * 10, 0.8 + rnd() * 1.6, rnd() < 0.2 ? '255,140,190' : '170,200,255', 0.25);
+      for (let i = 0; i < 140; i++) dot(cx + gauss() * 10 * q, cy + gauss() * 10 * q, 0.6 + rnd() * 1.2, rnd() < 0.2 ? '255,140,190' : '170,200,255', 0.22);
     }
     bulge(c * 0.3, 0.25);
   } else {
@@ -2576,16 +2788,16 @@ function makeGalaxyTexture(kind, seed) {
     const bar = kind === 'barred';
     const wind = kind === 'spiral3' ? 3.0 : 4.4;
     const r0 = bar ? 0.2 : 0.06;
-    for (let i = 0; i < 2600; i++) {
+    for (let i = 0; i < 6000; i++) {
       const arm = i % arms;
       const t = Math.pow(rnd(), 0.75);
       const r = (r0 + t * (0.92 - r0)) * c;
       const th = arm * (Math.PI * 2 / arms) + t * wind + gauss() * 0.22;
       const pink = rnd() < 0.06;
-      dot(c + Math.cos(th) * r + gauss() * 3, c + Math.sin(th) * r + gauss() * 3, 0.7 + rnd() * 1.4,
-        pink ? '255,120,180' : '170,200,255', (pink ? 0.45 : 0.22) * (1 - 0.6 * t));
+      dot(c + Math.cos(th) * r + gauss() * 3 * q, c + Math.sin(th) * r + gauss() * 3 * q, 0.5 + rnd() * 1.1,
+        pink ? '255,120,180' : '170,200,255', (pink ? 0.4 : 0.18) * (1 - 0.6 * t));
     }
-    for (let i = 0; i < 900; i++) {                     // rozmyty dysk między ramionami
+    for (let i = 0; i < 1800; i++) {                    // rozmyty dysk między ramionami
       const r = Math.abs(gauss()) * c * 0.35, th = rnd() * Math.PI * 2;
       dot(c + Math.cos(th) * r, c + Math.sin(th) * r, 1, '255,230,200', 0.06);
     }
@@ -2808,10 +3020,10 @@ function updateGalaxies(dt) {
 
 function layoutMode5() {
   const fwd = horizontalForward();
-  universe.position.copy(eyePos);
+  m5Origin.copy(eyePos);
+  m5Pivot.copy(eyePos).addScaledVector(fwd, MODE5_ZOOM_PIVOT_M);
   universe.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), fwd);
-  universe.scale.setScalar(1);
-  universe.updateMatrixWorld(true);
+  setUniverseScale(1);
   if (!renderer.xr.isPresenting) orbitControls.target.copy(eyePos).addScaledVector(fwd, 0.7).setY(eyePos.y - 0.35);
 }
 
@@ -3447,6 +3659,7 @@ const scaleRuler = (() => {
 const m6Origin = new THREE.Vector3(), m6Fwd = new THREE.Vector3(0, 0, -1), m6Right = new THREE.Vector3(1, 0, 0);
 state.scaleLog = scaleItems.find(it => it.def.id === 'human').focusLog;
 state.scaleSpeed = SCALE_SPEED_DEFAULT;
+state.scaleYaw = 0;                                   // obrót łuku obiektów (gałka lewo/prawo)
 state.scaleAnim = null;
 const scaleLogMin = scaleItems[0].focusLog - 1, scaleLogMax = scaleItems[scaleItems.length - 1].focusLog + 1;
 
@@ -3480,7 +3693,7 @@ function scaleJump(dir) {
   const list = dir > 0 ? scaleItems.filter(it => it.focusLog > L + 0.05) : scaleItems.filter(it => it.focusLog < L - 0.05).reverse();
   if (!list.length) return;
   const to = list[0].focusLog;
-  state.scaleAnim = { from: state.scaleLog, to, t: 0, dur: Math.max(0.7, Math.abs(to - state.scaleLog) / state.scaleSpeed) };
+  state.scaleAnim = { from: state.scaleLog, to, t: 0, dur: Math.max(0.7, Math.abs(to - state.scaleLog) / state.scaleSpeed), yaw0: state.scaleYaw };
 }
 
 function scaleZoom(amountDecades) {
@@ -3515,6 +3728,7 @@ function updateScaleMode(dt) {
   if (a) {
     a.t = Math.min(1, a.t + dt / a.dur);
     state.scaleLog = THREE.MathUtils.lerp(a.from, a.to, smooth(a.t));
+    state.scaleYaw = a.yaw0 * (1 - smooth(a.t));     // skok ustawia nowy obiekt na wprost
     if (a.t >= 1) state.scaleAnim = null;
   }
   const L = state.scaleLog, F = Math.pow(10, L);
@@ -3550,7 +3764,7 @@ function updateScaleMode(dt) {
       it.alpha = alpha;
     }
     // łuk przed Tobą: obiekt w centrum na wprost, mniejsze w lewo, większe w prawo i dalej
-    const th = theta[j] - offset;
+    const th = theta[j] - offset - state.scaleYaw;
     const dist = dists[j];
     _v3.copy(m6Right).multiplyScalar(Math.sin(th)).addScaledVector(m6Fwd, Math.cos(th));
     it.holder.scale.setScalar(d);
@@ -3573,19 +3787,180 @@ function updateScaleMode(dt) {
 }
 
 // =====================================================================
+//  TRYB 7: DROGA MLECZNA – od całej Galaktyki do Słońca
+//   Jednostki: lata świetlne. state.mwLog = log10(ile metrów w goglach ma 1 rok świetlny).
+//   Warstwy: Galaktyka (140 tys. gwiazd) → sąsiedztwo Słońca (1000 lat św.) → Układ Słoneczny → Słońce.
+// =====================================================================
+const mode7Group = new THREE.Group();
+mode7Group.visible = false;
+scene.add(mode7Group);
+const AU_PER_LY = 63241;
+const SUN_GAL = new THREE.Vector3(0, 0, 26000);        // Słońce 26 000 lat św. od centrum
+const mw = (() => {
+  const rnd = seededRandom('milkyway'), gauss = gaussian(rnd);
+  const pos = [], col = [];
+  const add = (x, y, z, r, g, b) => { pos.push(x, y, z); col.push(r * MW_BRIGHTNESS, g * MW_BRIGHTNESS, b * MW_BRIGHTNESS); };
+  const B = Math.tan(12 * DEG);                         // skok ramion spiralnych (12°)
+  for (let i = 0; i < MW_POINTS; i++) {
+    const u = rnd();
+    if (u < 0.17) {                                     // zgrubienie centralne i poprzeczka
+      const bar = rnd() < 0.5;
+      const x = gauss() * (bar ? 6000 : 2600), z = gauss() * (bar ? 1500 : 2600), y = gauss() * 1000;
+      const k = 0.7 + rnd() * 0.3;
+      const c = Math.cos(0.45), s2 = Math.sin(0.45);
+      add(x * c - z * s2, y, x * s2 + z * c, k, k * 0.82, k * 0.55);
+    } else if (u < 0.82) {                              // 4 ramiona spiralne (Perseusza, Strzelca, Tarczy–Centaura, Węgielnicy)
+      const arm = Math.floor(rnd() * 4);
+      const r = 4500 + Math.min(48000, -Math.log(1 - rnd() * 0.98) * 12000);
+      const th = Math.log(r / 4500) / B + arm * Math.PI / 2 + gauss() * 0.11;
+      const spread = 700 + r * 0.03;
+      const x = Math.cos(th) * r + gauss() * spread, z = Math.sin(th) * r + gauss() * spread, y = gauss() * (300 + r * 0.004);
+      const pink = rnd() < 0.04, k = 0.55 + rnd() * 0.45;
+      if (pink) add(x, y, z, 1, 0.45, 0.7); else add(x, y, z, k * 0.75, k * 0.85, k);
+    } else {                                            // dysk między ramionami
+      const r = -Math.log(1 - rnd() * 0.99) * 11000, th = rnd() * Math.PI * 2;
+      const k = 0.35 + rnd() * 0.35;
+      add(Math.cos(th) * r, gauss() * 500, Math.sin(th) * r, k, k * 0.92, k * 0.8);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  const galaxy = new THREE.Group();
+  const stars = new THREE.Points(geo, new THREE.PointsMaterial({ size: 1.8, sizeAttenuation: false, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  stars.frustumCulled = false;
+  const bulge = makeGlowSprite(0xffd8a0, 14000, 0.35, softGlowTexture);
+  const disk = galaxyQuad('barred', 100000, 0, -Math.PI / 2);      // delikatna poświata dysku pod gwiazdami
+  disk.material.opacity = 0.35;
+  galaxy.add(disk, stars, bulge);
+  mode7Group.add(galaxy);
+
+  // sąsiedztwo Słońca: gwiazdy do 1000 lat św. + najbardziej znane z nazwy
+  const near = new THREE.Group();
+  near.add(starPoints(4000, 'mwnear', v => v.multiplyScalar(1000).multiply(new THREE.Vector3(1, 0.5, 1)), [0.95, 0.92, 0.85]));
+  const named = [['Alfa Centauri (4,4 lat św.)', 4.37], ['Syriusz (8,6)', 8.6], ['Wega (25)', 25], ['Arktur (37)', 37], ['Gwiazda Polarna (430)', 433],
+    ['Plejady (444)', 444], ['Betelgeza (550)', 548], ['Mgławica Oriona (1340)', 1344]];
+  const nearLabels = named.map(([name, d], i) => {
+    const dir = new THREE.Vector3(Math.cos(i * 2.4), (rnd() - 0.5) * 0.6, Math.sin(i * 2.4)).normalize();
+    const sp = makeGlowSprite(0xfff0d0, d * 0.03 + 0.15, 1);
+    sp.position.copy(dir).multiplyScalar(d);
+    near.add(sp);
+    return { label: makeLabel(name), pos: sp.position.clone(), d };
+  });
+  mode7Group.add(near);
+
+  // Układ Słoneczny (jednostki: j.a.) i obłok Oorta
+  const solar = new THREE.Group();
+  const nep = BODIES.find(b => b.id === 'neptune').au;
+  for (const b of BODIES) if (b.au > 0 && b.id !== 'pluto') solar.add(makeCircleLineXZ(b.au, 128, b.color, 0.7));
+  solar.add(starPoints(3000, 'mwoort', (v, r) => v.normalize().multiplyScalar(2000 + 98000 * Math.sqrt(r())), [0.7, 0.8, 1]));
+  const sunMesh = new THREE.Mesh(sphereGeometryHi, new THREE.MeshBasicMaterial({ map: placeholderTexture(BODIES[0]), color: 0xffe2a0 }));
+  useTextureFile(sunMesh.material, '2k_sun.jpg');
+  sunMesh.scale.setScalar(696340 / KM_PER_AU);
+  solar.add(sunMesh);
+  mode7Group.add(solar);
+
+  // znacznik Słońca o stałej wielkości (gdy samo Słońce jest za małe, by je zobaczyć)
+  const marker = makeMarker(0xffe070, 12);
+  mode7Group.add(marker);
+  const labels = [
+    { label: makeLabel('Słońce – tu jesteśmy'), layer: 'sun' },
+    { label: makeLabel('Centrum Galaktyki (czarna dziura Sagittarius A*)'), layer: 'galaxy', pos: new THREE.Vector3(0, 0, 0) },
+    { label: makeLabel('Orbita Neptuna'), layer: 'solar', pos: new THREE.Vector3(nep, 0, 0) },
+    ...nearLabels.map(n => ({ label: n.label, layer: 'near', pos: n.pos })),
+  ];
+  for (const l of labels) mode7Group.add(l.label);
+  const matsOf = g => { const m = []; g.traverse(o => { if (o.material) { o.material.transparent = true; o.material.userData.baseOpacity = o.material.opacity; m.push(o.material); } }); return m; };
+  return { galaxy, near, solar, sunMesh, marker, labels, mats: { galaxy: matsOf(galaxy), near: matsOf(near), solar: matsOf(solar) } };
+})();
+
+const mwPivot = new THREE.Vector3();
+const mwQuat = new THREE.Quaternion();
+state.mwLog = Math.log10(MW_START_SIZE_M / 100000);
+state.mwYaw = 0;
+state.mwAnim = null;
+const MW_LOG_MIN = Math.log10(0.6 / 100000), MW_LOG_MAX = Math.log10(MW_SCALE_MAX);
+
+function layoutMode7() {
+  const fwd = horizontalForward();
+  mwPivot.copy(eyePos).addScaledVector(fwd, MW_DISTANCE_M);
+  mwPivot.y = eyePos.y - 0.15;
+  state.mwFwd = fwd.clone();
+  state.mwLog = Math.log10(MW_START_SIZE_M / 100000);
+  state.mwYaw = 0;
+  state.mwAnim = null;
+  if (!renderer.xr.isPresenting) orbitControls.target.copy(mwPivot);
+}
+function mwZoom(decades) { state.mwAnim = null; state.mwLog = THREE.MathUtils.clamp(state.mwLog + decades, MW_LOG_MIN, MW_LOG_MAX); }
+function mwGoTo(log) { state.mwAnim = { from: state.mwLog, to: log, t: 0, dur: Math.max(1.5, Math.abs(log - state.mwLog) / 2) }; }
+function mwSetScale(s) { state.mwAnim = null; state.mwLog = THREE.MathUtils.clamp(Math.log10(s), MW_LOG_MIN, MW_LOG_MAX); }
+
+// płynne pojawianie/znikanie warstwy w zakresie skali (log10 m/rok św.)
+const fadeWindow = (L, a0, a1, b0, b1) => Math.max(0, Math.min(1, (L - a0) / (a1 - a0), (b1 - L) / (b1 - b0)));
+function setLayerOpacity(mats, alpha, group) {
+  group.visible = alpha > 0.01;
+  for (const m of mats) m.opacity = m.userData.baseOpacity * alpha;
+}
+
+const _mwBase = new THREE.Quaternion(), _mwTilt = new THREE.Quaternion();
+function updateMode7(dt) {
+  const a = state.mwAnim;
+  if (a) {
+    a.t = Math.min(1, a.t + dt / a.dur);
+    state.mwLog = THREE.MathUtils.lerp(a.from, a.to, smooth(a.t));
+    if (a.t >= 1) state.mwAnim = null;
+  }
+  const L = state.mwLog, s = Math.pow(10, L);        // s = metry na rok świetlny
+  _mwBase.setFromUnitVectors(new THREE.Vector3(0, 0, -1), state.mwFwd || new THREE.Vector3(0, 0, -1));
+  _mwTilt.setFromAxisAngle(new THREE.Vector3(1, 0, 0), MW_TILT_DEG * DEG);
+  mwQuat.setFromAxisAngle(UP, state.mwYaw).multiply(_mwBase).multiply(_mwTilt);
+  // Galaktyka: Słońce zawsze w punkcie zoomu przed Tobą
+  mw.galaxy.quaternion.copy(mwQuat);
+  mw.galaxy.scale.setScalar(s);
+  mw.galaxy.position.copy(SUN_GAL).multiplyScalar(-s).applyQuaternion(mwQuat).add(mwPivot);
+  for (const g of [mw.near, mw.solar]) { g.quaternion.copy(mwQuat); g.position.copy(mwPivot); }
+  mw.near.scale.setScalar(s);
+  mw.solar.scale.setScalar(s / AU_PER_LY);
+  const alpha = {
+    galaxy: fadeWindow(L, -99, -98, -3, -1.5),
+    near: fadeWindow(L, -4.2, -3.5, 1, 2),
+    solar: fadeWindow(L, 0.5, 1.5, 99, 100),
+  };
+  setLayerOpacity(mw.mats.galaxy, alpha.galaxy, mw.galaxy);
+  setLayerOpacity(mw.mats.near, alpha.near, mw.near);
+  setLayerOpacity(mw.mats.solar, alpha.solar, mw.solar);
+  mw.marker.position.copy(mwPivot);
+  const sunPx = (1.39e9 / 9.4607e15) * s / Math.max(0.1, mwPivot.distanceTo(eyePos)) / getPixelAngle();
+  mw.marker.visible = sunPx < 6;
+  for (const l of mw.labels) {
+    let vis = l.layer === 'sun' ? true : alpha[l.layer] > 0.5;
+    let p = mwPivot;
+    if (l.layer === 'galaxy') p = _v1.copy(l.pos).sub(SUN_GAL).multiplyScalar(s).applyQuaternion(mwQuat).add(mwPivot);
+    if (l.layer === 'near') { p = _v1.copy(l.pos).multiplyScalar(s).applyQuaternion(mwQuat).add(mwPivot); vis = vis && p.distanceTo(eyePos) < 400 && p.distanceTo(mwPivot) > 0.04; }
+    if (l.layer === 'solar') { p = _v1.copy(l.pos).multiplyScalar(s / AU_PER_LY).applyQuaternion(mwQuat).add(mwPivot); vis = alpha.solar > 0.5 && p.distanceTo(mwPivot) < 60; }
+    l.label.visible = vis;
+    if (vis) placeLabel(l.label, p, l.layer === 'sun' ? Math.max(0.02, (696340e3 / 9.4607e15) * s * 1.2) : 0.02, LABEL_ANGLE_DEG);
+  }
+}
+
+// =====================================================================
 //  MENU (panel z przyciskami, rysowany na canvas) – przesuwane i chowane
 // =====================================================================
 const MENU_CANVAS_W = 1024, MENU_CANVAS_H = 470;
 const MENU_USED_H = 460;
 const MENU_HEIGHT_M = MENU_WIDTH_M * MENU_CANVAS_H / MENU_CANVAS_W;
-const MODE_NAMES = { 1: 'Model', 2: 'Planety', 3: 'Ludziki', 4: 'Obiekty', 5: 'Kosmos', 6: 'Skala' };
+const MODE_NAMES = { 1: 'Model', 2: 'Planety', 3: 'Ludziki', 4: 'Obiekty', 5: 'Kosmos', 6: 'Skala', 7: 'Galaktyka' };
 const menuButtons = [
   { id: 'hide', label: 'Schowaj ✕', x: 760, y: 18, w: 246, h: 70, small: true },
-  ...[1, 2, 3, 4, 5, 6].map(m => ({ id: 'mode' + m, label: 'Tryb ' + m, sub: MODE_NAMES[m], x: 18 + (m - 1) * 168, y: 196, w: 156, h: 120 })),
-  { id: 'reset', label: 'Reset', x: 18, y: 332, w: 300, h: 112, modes: [1, 2, 3, 4, 5] },
-  { id: 'timeSlow', label: '◀◀ Wolniej', x: 330, y: 332, w: 220, h: 112, modes: [1], small: true },
-  { id: 'timePlay', label: () => (state.timePaused ? '▶ Start' : '❚❚ Pauza'), x: 562, y: 332, w: 220, h: 112, modes: [1], small: true },
-  { id: 'timeFast', label: 'Szybciej ▶▶', x: 794, y: 332, w: 212, h: 112, modes: [1], small: true },
+  ...[1, 2, 3, 4, 5, 6, 7].map(m => ({ id: 'mode' + m, label: 'Tryb ' + m, sub: MODE_NAMES[m], x: 18 + (m - 1) * 142, y: 196, w: 134, h: 120, small: true, subFont: '26px system-ui, sans-serif' })),
+  { id: 'mwAll', label: 'Cała Galaktyka', x: 18, y: 332, w: 480, h: 112, modes: [7] },
+  { id: 'mwSun', label: 'Leć do Słońca', x: 526, y: 332, w: 480, h: 112, modes: [7] },
+  { id: 'reset', label: 'Reset', x: 18, y: 332, w: 300, h: 112, modes: [2, 3, 4, 5] },
+  { id: 'reset', label: 'Reset', x: 18, y: 332, w: 200, h: 112, modes: [1], small: true },
+  { id: 'track', label: 'Planeta (B)', sub: () => (state.track ? 'trzymana' : 'puszczona'), x: 230, y: 332, w: 230, h: 112, modes: [1], small: true },
+  { id: 'timeSlow', label: '◀◀ Wolniej', x: 472, y: 332, w: 172, h: 112, modes: [1], small: true },
+  { id: 'timePlay', label: () => (state.timePaused ? '▶ Start' : '❚❚ Pauza'), x: 656, y: 332, w: 172, h: 112, modes: [1], small: true },
+  { id: 'timeFast', label: 'Szybciej ▶▶', x: 840, y: 332, w: 166, h: 112, modes: [1], small: true },
   { id: 'prev', label: '◀ Mniejszy (B)', x: 18, y: 332, w: 262, h: 112, modes: [6], small: true },
   { id: 'speed', slider: true, x: 292, y: 332, w: 440, h: 112, modes: [6] },
   { id: 'next', label: 'Większy (A) ▶', x: 744, y: 332, w: 262, h: 112, modes: [6], small: true },
@@ -3593,12 +3968,13 @@ const menuButtons = [
   { id: 'glue', label: 'Sklej (B)', x: 682, y: 332, w: 324, h: 112, modes: [2, 4] },
 ];
 const MENU_HINTS = {
-  1: 'Spust: chwyć · 2 ręce/gałka: zoom · Grip na planecie: leć do niej (śledzi ją)',
+  1: 'Grip na planecie: leć · B: trzymaj/puść planetę · gałka: zoom i obrót widoku',
   2: 'Spust/grip: chwyć (z daleka przyciąga) · puść w ruchu = rzut · A: nóż · B: sklej',
   3: 'Spust/grip: chwyć planetę (z daleka przylatuje) i obracaj w dłoni · 2 ręce: powiększ',
   4: 'Obiekty NIE w skali – prawdziwe rozmiary na tabliczkach · A: nóż · B: sklej',
-  5: 'Gałka lub 2 ręce: pomniejsz/powiększ kosmos · spust/grip + obrót dłoni: obróć niebo',
-  6: 'Prawa gałka: zoom · gałki lewo/prawo: obróć obiekt · A/B: większy/mniejszy',
+  5: 'Gałka góra/dół albo rozsuwanie dłoni (2 spusty): pomniejsz / powiększ kosmos',
+  6: 'Gałka góra/dół: zoom · lewo/prawo: obróć widok · A/B: większy/mniejszy',
+  7: 'Gałka/2 ręce: zoom do Słońca (700 mld razy mniejsze od Galaktyki) · lewo/prawo: obrót',
 };
 const [menuCanvas, menuCtx] = makeCanvas(MENU_CANVAS_W, MENU_CANVAS_H);
 const menuTexture = canvasTexture(menuCanvas);
@@ -3668,10 +4044,11 @@ function drawMenu() {
     }
     const label = typeof b.label === 'function' ? b.label() : b.label;
     ctx.font = b.small ? 'bold 34px system-ui, sans-serif' : 'bold 40px system-ui, sans-serif';
-    ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 - (b.sub ? 18 : 0));
-    if (b.sub) {
-      ctx.font = '32px system-ui, sans-serif';
-      ctx.fillText(b.sub, b.x + b.w / 2, b.y + b.h / 2 + 26);
+    const sub = typeof b.sub === 'function' ? b.sub() : b.sub;
+    ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 - (sub ? 18 : 0));
+    if (sub) {
+      ctx.font = b.subFont || '32px system-ui, sans-serif';
+      ctx.fillText(sub, b.x + b.w / 2, b.y + b.h / 2 + 26);
     }
   }
   ctx.textAlign = 'left';
@@ -3694,10 +4071,14 @@ function onMenuButton(button) {
     case 'mode4': setMode(4); break;
     case 'mode5': setMode(5); break;
     case 'mode6': setMode(6); break;
+    case 'mode7': setMode(7); break;
+    case 'mwAll': mwGoTo(Math.log10(MW_START_SIZE_M / 100000)); break;
+    case 'mwSun': mwGoTo(MW_LOG_MAX); break;
     case 'prev': scaleJump(-1); break;
     case 'timeSlow': state.timeIndex = Math.max(0, state.timeIndex - 1); state.timePaused = false; break;
     case 'timeFast': state.timeIndex = Math.min(TIME_SPEEDS.length - 1, state.timeIndex + 1); state.timePaused = false; break;
     case 'timePlay': state.timePaused = !state.timePaused; break;
+    case 'track': toggleTrack(); break;
     case 'next': scaleJump(1); break;
     case 'reset': resetCurrentMode(); break;
     case 'knife': setKnife(!state.knife); break;
@@ -3727,7 +4108,8 @@ function setMode(mode) {
   shelf4.group.visible = mode === 4;
   mode5Group.visible = mode === 5;
   mode6Group.visible = mode === 6;
-  stars.visible = mode !== 5;                        // w przestrzeni międzygalaktycznej nie ma pobliskich gwiazd
+  mode7Group.visible = mode === 7;
+  stars.visible = mode !== 5 && mode !== 7;                        // w przestrzeni międzygalaktycznej nie ma pobliskich gwiazd
   if (!state.placed[mode]) { layoutMode(mode); state.placed[mode] = true; }
   else if (!renderer.xr.isPresenting) focusOrbitOnMode(mode);
   drawMenu();
@@ -3740,6 +4122,7 @@ function layoutMode(mode) {
   if (mode === 4) layoutShelf4();
   if (mode === 5) layoutMode5();
   if (mode === 6) layoutMode6();
+  if (mode === 7) layoutMode7();
 }
 
 // Suwak: pozycja trafienia na pasku -> prędkość
@@ -3754,6 +4137,7 @@ function focusOrbitOnMode(mode) {
   if (mode === 1) orbitControls.target.copy(systemGroup.position);
   if (mode === 3) orbitControls.target.copy(m3Planet.position);
   if (mode === 6) orbitControls.target.copy(m6Origin).addScaledVector(m6Fwd, SCALE_DISTANCE_M + 0.3).setY(SCALE_BASELINE_Y_M + 0.3);
+  if (mode === 7) orbitControls.target.copy(mwPivot);
   const shelf = shelfFor(mode);
   if (shelf) {
     const c = new THREE.Vector3();
@@ -3923,11 +4307,12 @@ function onPressStart(ctrl, source) {
     grabShelf(shelfFor(mode), ctrl);
     grabbed = !!ctrl.userData.grabTarget;
   } else if (mode === 3) grabbed = grabMode3(ctrl);
-  else if (mode === 5) grabbed = startGrab(universe, ctrl, MODE5_GRAB);
+  else if (mode === 5 || mode === 7) { state.m5Hands.add(ctrl); state.m5Pinch = null; return; }
   if (grabbed || ctrl.userData.grabTarget) ctrl.userData.grabSource = source;
 }
 
 function onPressEnd(ctrl, source) {
+  if (state.m5Hands.delete(ctrl)) state.m5Pinch = null;
   if (ctrl.userData.uiPress === source) {
     ctrl.userData.uiPress = null;
     if (state.sliderCtrl === ctrl) state.sliderCtrl = null;
@@ -3960,6 +4345,7 @@ function onButtonDown(ctrl, index) {
   }
   if (shelfFor(state.mode) && hand === 'right' && index === KNIFE_BUTTON) setKnife(!state.knife);
   if (shelfFor(state.mode) && hand === 'right' && index === RESET_BUTTON) glueAll(shelfFor(state.mode));
+  if (state.mode === 1 && hand === 'right' && index === RESET_BUTTON) toggleTrack();
   if (state.mode === 6 && hand === 'right' && index === KNIFE_BUTTON) scaleJump(1);
   if (state.mode === 6 && hand === 'right' && index === RESET_BUTTON) scaleJump(-1);
 }
@@ -3972,44 +4358,76 @@ function stickUniverse(ctrl, dt) {
   if (Math.abs(y) < STICK_DEADZONE) return;
   zoomUniverse(Math.pow(STICK_ZOOM_RATE * 0.5, -y * dt));
 }
-function zoomUniverse(factor) {
-  const s0 = universe.scale.x;
-  const s1 = THREE.MathUtils.clamp(s0 * factor, MODE5_SCALE_MIN, MODE5_SCALE_MAX);
-  // punkt przed Tobą (zoom wokół oka nic by nie zmienił – wszystko kurczyłoby się w stronę źrenicy)
-  const pivot = _v4.copy(eyePos).addScaledVector(horizontalForward(), MODE5_ZOOM_PIVOT_M);
-  universe.position.sub(pivot).multiplyScalar(s1 / s0).add(pivot);
-  universe.scale.setScalar(s1);
+function zoomUniverse(factor) { setUniverseScale(universe.scale.x * factor); }
+// Skala kosmosu wokół stałego punktu przed Tobą (zoom wokół oka nic by nie zmienił – wszystko kurczyłoby się
+// w stronę źrenicy). Położenie zależy tylko od skali, więc powrót do 1× zawsze wraca do punktu startu.
+const m5Origin = new THREE.Vector3(), m5Pivot = new THREE.Vector3();
+function setUniverseScale(s) {
+  s = THREE.MathUtils.clamp(s, MODE5_SCALE_MIN, MODE5_SCALE_MAX);
+  universe.scale.setScalar(s);
+  universe.position.copy(m5Origin).sub(m5Pivot).multiplyScalar(s).add(m5Pivot);
   universe.updateMatrixWorld(true);
-  reinitGrab(universe);
+}
+// Rozsuwanie/zsuwanie dłoni (oba spusty) = zoom
+function updateMode5Pinch(getScale = () => universe.scale.x, setScale = setUniverseScale, power = 1) {
+  if (state.m5Hands.size < 2) return;
+  const [a, b] = [...state.m5Hands];
+  const d = _v1.setFromMatrixPosition(a.matrixWorld).distanceTo(_v2.setFromMatrixPosition(b.matrixWorld));
+  if (!state.m5Pinch) state.m5Pinch = { d0: Math.max(d, 0.02), s0: getScale() };
+  setScale(state.m5Pinch.s0 * Math.pow(d / state.m5Pinch.d0, power));
 }
 
-// Gałki w Trybie 6: prawa góra/dół = zoom; lewo/prawo = obrót obiektu w centrum; lewa góra/dół = pochylenie
+// Gałka w Trybie 7: góra/dół = zoom do Słońca, lewo/prawo = obrót Galaktyki
+function stickGalaxy(ctrl, dt) {
+  const gp = ctrl.userData.inputSource && ctrl.userData.inputSource.gamepad;
+  if (!gp || gp.axes.length <= ZOOM_STICK_AXIS) return;
+  const x = gp.axes[ZOOM_STICK_AXIS - 1], y = gp.axes[ZOOM_STICK_AXIS];
+  if (Math.abs(y) > STICK_DEADZONE) mwZoom(-y * MW_ZOOM_RATE * dt);
+  if (Math.abs(x) > STICK_DEADZONE) state.mwYaw -= x * 50 * DEG * dt;
+}
+
+// Gałki w Trybie 6: góra/dół = zoom; lewo/prawo = obrót całego łuku obiektów wokół Ciebie
 function stickScale(ctrl, dt) {
   const gp = ctrl.userData.inputSource && ctrl.userData.inputSource.gamepad;
   if (!gp || gp.axes.length <= ZOOM_STICK_AXIS) return;
   const x = gp.axes[ZOOM_STICK_AXIS - 1], y = gp.axes[ZOOM_STICK_AXIS];
-  const left = ctrl.userData.handedness === 'left';
-  const yaw = Math.abs(x) > STICK_DEADZONE ? x : 0;
-  const pitch = left && Math.abs(y) > STICK_DEADZONE ? y : 0;
-  if (!left && Math.abs(y) > STICK_DEADZONE) scaleZoom(y * state.scaleSpeed * dt);
-  if (yaw || pitch) rotateScaleItem(yaw * dt, pitch * dt);
+  if (Math.abs(y) > STICK_DEADZONE) scaleZoom(y * state.scaleSpeed * dt);
+  if (Math.abs(x) > STICK_DEADZONE) turnScaleView(x * dt);
 }
-function rotateScaleItem(yawK, pitchK) {
-  const it = nearestScaleItem();
-  it.manual = true;                                   // ręczne obracanie wyłącza automatyczny obrót
-  const r = SCALE_MANUAL_TURN_DEG_S * DEG;
-  it.turn.quaternion.premultiply(_q1.setFromAxisAngle(UP, yawK * r));
-  it.turn.quaternion.premultiply(_q1.setFromAxisAngle(m6Right, pitchK * r));
+function turnScaleView(k) {
+  state.scaleYaw = THREE.MathUtils.clamp(state.scaleYaw + k * SCALE_VIEW_TURN_DEG_S * DEG, -Math.PI * 0.9, Math.PI * 0.9);
 }
 
-// Gałka: płynny zoom układu wokół dłoni (Tryb 1)
+// Gałka w Trybie 1: góra/dół = zoom, lewo/prawo = obrót całego układu wokół trzymanej planety
+// (albo punktu przed Tobą) – żeby oglądać planetę ze wszystkich stron bez kręcenia się w miejscu
 function stickZoom(ctrl, dt) {
   const gp = ctrl.userData.inputSource && ctrl.userData.inputSource.gamepad;
   if (!gp || gp.axes.length <= ZOOM_STICK_AXIS) return;
-  const y = gp.axes[ZOOM_STICK_AXIS];
+  const x = gp.axes[ZOOM_STICK_AXIS - 1], y = gp.axes[ZOOM_STICK_AXIS];
+  if (Math.abs(x) > STICK_DEADZONE) turnSystem(-x * STICK_TURN_DEG_S * DEG * dt);
   if (Math.abs(y) < STICK_DEADZONE) return;
   state.focus = null;
-  zoomSystemAround(_v4.setFromMatrixPosition(ctrl.matrixWorld), Math.pow(STICK_ZOOM_RATE, -y * dt));
+  const pivot = state.track ? state.track.point : _v4.setFromMatrixPosition(ctrl.matrixWorld);
+  zoomSystemAround(pivot.clone(), Math.pow(STICK_ZOOM_RATE, -y * dt), true);
+}
+function systemPivot() {
+  if (state.track) return state.track.point;
+  if (state.focus) return state.focus.P1;
+  return _v4.copy(eyePos).addScaledVector(horizontalForward(), 1.0);
+}
+function turnSystem(angle) {
+  const pivot = systemPivot().clone();
+  _q1.setFromAxisAngle(UP, angle);
+  systemGroup.position.sub(pivot).applyQuaternion(_q1).add(pivot);
+  systemGroup.quaternion.premultiply(_q1);
+  systemGroup.updateMatrixWorld(true);
+  reinitGrab(systemGroup);
+}
+// B (lub przycisk w menu): trzymaj planetę przed sobą / puść ją (widok ogólny – planety odlatują po orbitach)
+function toggleTrack() {
+  if (state.track) state.track = null;
+  else if (state.lastFocusBody) state.track = { body: state.lastFocusBody, point: state.lastFocusBody.worldPos.clone() };
+  drawMenu();
 }
 
 // =====================================================================
@@ -4051,18 +4469,23 @@ window.addEventListener('keydown', e => {
   if (key === 'm') setMenuHidden(!state.menuHidden);
   if (state.mode === 1 && (e.key === '+' || e.key === '=')) zoomSystemAround(orbitControls.target.clone(), 2);
   if (state.mode === 1 && e.key === ' ') { state.timePaused = !state.timePaused; drawMenu(); }
+  if (state.mode === 1 && key === 'b') toggleTrack();
+  if (state.mode === 1 && e.key === 'ArrowLeft') turnSystem(0.2);
+  if (state.mode === 1 && e.key === 'ArrowRight') turnSystem(-0.2);
   if (state.mode === 1 && e.key === '.') { state.timeIndex = Math.min(TIME_SPEEDS.length - 1, state.timeIndex + 1); state.timePaused = false; }
   if (state.mode === 1 && e.key === ',') { state.timeIndex = Math.max(0, state.timeIndex - 1); state.timePaused = false; }
+  if (state.mode === 7 && (e.key === '+' || e.key === '=')) mwZoom(0.5);
+  if (state.mode === 7 && e.key === '-') mwZoom(-0.5);
+  if (state.mode === 7 && e.key === 'ArrowLeft') state.mwYaw += 0.15;
+  if (state.mode === 7 && e.key === 'ArrowRight') state.mwYaw -= 0.15;
   if (state.mode === 5 && (e.key === '+' || e.key === '=')) zoomUniverse(2);
   if (state.mode === 5 && e.key === '-') zoomUniverse(0.5);
   if (state.mode === 1 && e.key === '-') zoomSystemAround(orbitControls.target.clone(), 0.5);
   if (state.mode === 6) {
     if (e.key === '+' || e.key === '=') scaleZoom(-0.25);
     if (e.key === '-') scaleZoom(0.25);
-    if (e.key === 'ArrowLeft') rotateScaleItem(-0.15, 0);
-    if (e.key === 'ArrowRight') rotateScaleItem(0.15, 0);
-    if (e.key === 'ArrowUp') rotateScaleItem(0, -0.15);
-    if (e.key === 'ArrowDown') rotateScaleItem(0, 0.15);
+    if (e.key === 'ArrowLeft') turnScaleView(-0.25);
+    if (e.key === 'ArrowRight') turnScaleView(0.25);
     if (key === 'n') scaleJump(1);
     if (key === 'p') scaleJump(-1);
     if (key === ']') setScaleSpeedFromFraction(Math.log(state.scaleSpeed * 1.5 / SCALE_SPEED_MIN) / Math.log(SCALE_SPEED_MAX / SCALE_SPEED_MIN));
@@ -4146,8 +4569,10 @@ function updateStatus(time) {
     text = `Skala ×${m3Planet.scale.x.toFixed(2)}  ·  ⌀ planety ${formatLength(MODE3_PLANET_DIAMETER_M * m3Planet.scale.x)}  ·  ${state.fps} FPS`;
   } else if (mode === 5) {
     text = `1 m = ${formatLy(LY_MILLIONS_PER_M / universe.scale.x)} lat świetlnych  ·  galaktyk: ${galaxies.length + cosmos.web.geometry.attributes.position.count}  ·  ${state.fps} FPS`;
-  } else {
+  } else if (mode === 6) {
     text = `1 m w goglach = ${formatMeters(Math.pow(10, state.scaleLog))}  ·  ${nearestScaleItem().def.name}  ·  ${state.fps} FPS`;
+  } else {
+    text = `1 m w goglach = ${formatMeters(9.4607e15 / Math.pow(10, state.mwLog))}  ·  ${state.fps} FPS`;
   }
   if (text !== state.status && time - statusTime > 250) {
     state.status = text;
@@ -4208,6 +4633,7 @@ renderer.setAnimationLoop((time, frame) => {
     if (state.mode === 1 && presenting) stickZoom(ctrl, dt);
     if (state.mode === 6 && presenting) stickScale(ctrl, dt);
     if (state.mode === 5 && presenting) stickUniverse(ctrl, dt);
+    if (state.mode === 7 && presenting) stickGalaxy(ctrl, dt);
     const knifeHand = isKnifeHand(ctrl);
     ctrl.userData.ray.visible = presenting && !knifeHand;
     ctrl.userData.rayDot.visible = false;
@@ -4273,10 +4699,14 @@ renderer.setAnimationLoop((time, frame) => {
     updateMode3Extras(dt);
     updateHeadlight(mode3Light);
   } else if (state.mode === 5) {
+    updateMode5Pinch();
     updateGalaxies(dt);
-  } else {
+  } else if (state.mode === 6) {
     updateScaleMode(dt);
     updateHeadlight(mode6Light);
+  } else if (state.mode === 7) {
+    updateMode5Pinch(() => Math.pow(10, state.mwLog), mwSetScale, 4);   // mocniej – zakres to 11 rzędów wielkości
+    updateMode7(dt);
   }
   if (!shelf) cutPreview.visible = knife.visible = false;
 
@@ -4293,6 +4723,6 @@ window.solar = {
   THREE, scene, camera, renderer, state, systemGroup, bodies, moons, orbitControls,
   shelf2, shelf4, m3Planet, people, universe, galaxies, cosmos, menuMesh, menuTab, floaters, controllers,
   setMode, startFocus, cutItem, glueAll, startGrab, endGrab, updateGrabs, grabs, zoomSystemAround,
-  setKnife, updateKnife, tryKnifeCut, grabShelf, setMenuHidden, onPressStart, onPressEnd,
-  models, scaleItems, scaleJump, scaleZoom, m3Surface, layoutMode,
+  setKnife, updateKnife, tryKnifeCut, grabShelf, setMenuHidden, onPressStart, onPressEnd, startBehavior,
+  models, scaleItems, scaleJump, scaleZoom, m3Surface, layoutMode, mwGoTo, mwZoom, mw,
 };
