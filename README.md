@@ -6,21 +6,26 @@ Nie trzeba nic instalować w goglach: wystarczy otworzyć stronę i kliknąć **
 Sześć trybów (przełączane na panelu menu):
 
 - **Tryb 1 – Model:** cały układ do orbity Plutona w prawdziwej skali, z księżycami i pierścieniami.
-  Można go trzymać w dłoni albo dolecieć do pojedynczej planety i oglądać ją z bliska.
+  Planety krążą po eliptycznych orbitach (prawa Keplera) i obracają się wokół osi, księżyce krążą wokół planet.
+  Czas można przyspieszać, zwalniać i zatrzymać. Układ da się trzymać w dłoni albo dolecieć do pojedynczej
+  planety; po przelocie widok „jedzie” razem z nią.
 - **Tryb 2 – Planety:** Słońce, 8 planet, Pluton i 9 największych księżyców **w prawdziwych proporcjach**
   (1 cm = 1274 km, więc Słońce ma ok. 11 m średnicy i „wschodzi” za planetami). Obiekty można chwytać,
   rzucać, skalować i **przecinać nożem**: warstwy wnętrza są w proporcjach zgodnych z obecną wiedzą naukową.
-- **Tryb 3 – Ludziki:** planeta z modelu 3D (średnica 1 m), po której chodzi 30 ludzików z modelu 3D
-  ze szkieletem i animacją chodu (1 cm wzrostu, każdy w innej fazie kroku).
+- **Tryb 3 – Ludziki:** planeta z modelu 3D (średnica 1 m) z chmurkami, a po niej 30 ludzików z modelu 3D
+  (1 cm wzrostu), którzy na zmianę chodzą, biegają i stoją, rozglądając się. W tle kreskówkowy mini-kosmos:
+  uśmiechnięte słoneczko i kolorowe planetki na orbitach.
   Ludziki idą po rzeźbie terenu (góry, doliny) i omijają morza.
 - **Tryb 4 – Obiekty:** czarna dziura, pulsar, biały karzeł, Ziemia (dla porównania) i kometa. Są w wygodnych rozmiarach, a prawdziwe
   rozmiary podają tabliczki. Pulsar i białego karła można przeciąć.
 - **Tryb 5 – Kosmos:** stoisz w miejscu, zanurzony w setkach miniaturowych galaktyk (700, gęstość
-  zwiększona dla efektu). Droga Mleczna i Andromeda są w prawdziwej skali (1 m = 1 mln lat świetlnych),
-  a tło to sfera z obrazem sieci kosmicznej (włókna i gromady galaktyk).
-- **Tryb 6 – Skala:** podróż przez 23 rzędy wielkości, od atomu (0,1 nm) przez DNA, wirusa, bakterię, włos,
-  mrówkę, człowieka, autobus, płetwala, wieżę Eiffla, Everest, księżyce, Ziemię, Jowisza i Słońce po Betelgezę
-  i cały Układ Słoneczny (28 obiektów). Kolejne różnią się najwyżej ok. 30×, więc zawsze widać trzy
+  zwiększona dla efektu). Droga Mleczna i Andromeda są w prawdziwej skali (1 m = 1 mln lat świetlnych).
+  Po pomniejszeniu (gałka lub dwie ręce) widać trójwymiarowy fragment sieci kosmicznej: ok. 40 tys. galaktyk
+  w włóknach i gromadach. Tło to sfera z obrazem dalszej części sieci.
+- **Tryb 6 – Skala:** podróż przez 33 rzędy wielkości, od atomu (0,1 nm) przez DNA, wirusa, bakterię, włos,
+  mrówkę, człowieka, autobus, płetwala, wieżę Eiffla, Everest, księżyce, Ziemię, Jowisza, Słońce, Betelgezę,
+  Układ Słoneczny, heliosferę, obłok Oorta, najbliższe gwiazdy, Plejady, Bąbel Lokalny i ramię Oriona po Drogę
+  Mleczną i Grupę Lokalną galaktyk (39 obiektów). Obiekt w centrum można obracać gałką. Kolejne różnią się najwyżej ok. 30×, więc zawsze widać trzy
   porównywalne obok siebie na wprost: mniejszy z lewej, bieżący w środku, większy z prawej.
 
 Ziemia we wszystkich trybach to model 3D z teksturą (`models/earth.glb`).
@@ -45,7 +50,8 @@ Wspólne dla wszystkich trybów:
 |---|---|
 | Złap i przesuń/obróć cały układ | spust jednej ręki |
 | Płynny zoom wokół dłoni | **gałka** w górę/dół |
-| **Leć do planety / księżyca** | wyceluj promieniem w planetę (etykieta zrobi się żółta) i naciśnij **grip** |
+| **Leć do planety / księżyca** | wyceluj promieniem w planetę (etykieta zrobi się żółta) i naciśnij **grip**; potem widok śledzi planetę |
+| Czas | przyciski w menu: **◀◀ Wolniej**, **❚❚ Pauza / ▶ Start**, **Szybciej ▶▶** (0,1–365 dni na sekundę); data w statusie |
 | Pokaż układ księżyców tej planety | po przylocie naciśnij **grip** na tej samej planecie jeszcze raz |
 
 Skala: od ok. **15 cm** (cały układ w dłoni) do **5 mln ×** (wtedy Ziemia ma ok. 60 cm średnicy).
@@ -77,13 +83,15 @@ Skala: od ok. **15 cm** (cały układ w dłoni) do **5 mln ×** (wtedy Ziemia ma
 | Akcja | Jak |
 |---|---|
 | Rozglądaj się | galaktyki są wszędzie wokół, także nad i pod Tobą |
+| **Pomniejsz / powiększ kosmos** | **gałka** góra/dół albo obie ręce; przy najmocniejszym pomniejszeniu fragment sieci kosmicznej (~300 mln lat św.) jest bryłą ok. 2 m przed Tobą |
 | Obróć całe niebo | chwyć spustem/gripem i obróć dłoń |
 
 ### Tryb 6 – Skala
 
 | Akcja | Jak |
 |---|---|
-| Płynny zoom | **gałka** w górę (przybliżanie) / w dół (oddalanie) |
+| Płynny zoom | **prawa gałka** w górę (przybliżanie) / w dół (oddalanie) |
+| **Obróć obiekt w centrum** | **gałka w lewo/prawo** (obie); **lewa gałka góra/dół** = pochylenie |
 | Skok do następnego większego / mniejszego obiektu | **A** / **B** (albo przyciski w menu) |
 | Prędkość zoomu i skoków | **suwak** w menu (przeciągnij promieniem) |
 
@@ -107,7 +115,8 @@ Na panelu menu widać skalę i **FPS** (cel: 72).
    Zobaczysz układ: myszą obracasz widok, kółkiem przybliżasz, klikasz w przyciski panelu.
    Skróty na PC: **M** = pokaż/schowaj menu; Tryb 1 – **podwójny klik** na planecie = przelot, **+ / −** = zoom układu;
    Tryby 2 i 4 – **C** = przetnij obiekt pod kursorem, **G** = sklej, **T** = rzuć obiekt pod kursorem;
-   Tryb 6 – **+ / −** = zoom, **N / P** = następny/poprzedni obiekt, **[ / ]** = prędkość.
+   Tryb 6 – **+ / −** = zoom, **N / P** = następny/poprzedni obiekt, **[ / ]** = prędkość, **strzałki** = obrót obiektu;
+   Tryb 1 – **spacja** = pauza, **, / .** = wolniej/szybciej; Tryb 5 – **+ / −** = zoom.
    > Nie otwieraj `index.html` podwójnym kliknięciem: przeglądarka zablokuje moduły JavaScript, bo plik nie idzie przez serwer.
 5. *(Opcjonalnie)* Żeby przetestować VR na PC, zainstaluj w Chrome rozszerzenie
    **Immersive Web Emulator** (od Meta). Pojawi się przycisk ENTER VR i wirtualne kontrolery Questa
@@ -149,14 +158,17 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 | `FOCUS_*`, `STICK_ZOOM_RATE` | przelot do planety, zoom gałką |
 | `MOONS`, `MOON_*` | księżyce: rozmiary, orbity, kolory; od kiedy są widoczne |
 | `MARKER_SIZE_PX`, `BODY_SWITCH_PX` | rozmiar kropek-markerów; od ilu pikseli rysować prawdziwą bryłę |
-| `TIME_SPEED_DAYS_PER_SEC` | prędkość czasu: 0 = model statyczny, np. 30 = planety krążą |
+| `TIME_SPEEDS`, `TIME_SPEED_DEFAULT_INDEX`, `TIME_START_PAUSED` | prędkości czasu w Trybie 1 (dni na sekundę) |
+| `ORBIT_ELEMENTS`, `MOON_PERIODS` | mimośrody, peryhelia, doby planet, okresy obiegu księżyców |
+| `SPIN_MAX_DEG_S`, `MOON_MAX_DEG_S` | ograniczenie widocznej prędkości obrotu (przy szybkim czasie byłoby migotanie) |
 | `USE_REAL_POSITIONS` | planety w przybliżonych pozycjach z dnia uruchomienia |
 | `THROW_*` | rzucanie: opór „gęstej cieczy”, maksymalna prędkość |
 | `MODE2_*` | Tryb 2: rozmiar Ziemi (reszta w tej samej skali), łuk, położenie Słońca, limity skali |
 | `KNIFE_*`, `CUT_*`, `LAYERS` | nóż, przekrój i warstwy wnętrza każdego ciała |
 | `MODE3_*` | Tryb 3: średnica planety, liczba/wzrost/prędkość ludzików, kolory |
 | `OBJECTS`, `MODE4_*`, `PULSAR_*`, `BLACK_HOLE_*` | Tryb 4: lista obiektów, rozmiary, animacje |
-| `GALAXY_*`, `WEB_*` | Tryb 5: liczba, rozmiary i gęstość galaktyk; rozdzielczość i gęstość tła z siecią kosmiczną |
+| `GALAXY_*`, `WEB_*`, `WEB3D_*`, `MODE5_*` | Tryb 5: galaktyki wokół, tło, trójwymiarowy fragment sieci, zakres zoomu |
+| `MODE3_BEHAVIOR`, `MODE3_CLOUD_*`, `MODE3_MINI_COSMOS` | Tryb 3: czynności ludzików (szanse, czasy), chmurki, kreskówkowy mini-kosmos |
 | `MODEL_FILES`, `PERSON_*` | pliki modeli 3D; nazwa animacji chodu i obrót modelu ludzika |
 | `SCALE_*`, `SCALE_OBJECTS` | Tryb 6: lista obiektów (rozmiar, opis), progi znikania, prędkość zoomu |
 | `MENU_*` | panel menu: rozmiar, odległość, położenie zakładki schowanego menu |
@@ -170,7 +182,9 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
   rzeczywistej skali**, dlatego planety są mikroskopijne (średnica Ziemi to ok. 0,005 mm przy skali 1).
 - Co klatkę liczony jest rozmiar każdej bryły w pikselach (z kąta widzenia i rozdzielczości gogli).
   Jeśli bryła ma ponad 1 px, rysowana jest kula z teksturą, a jeśli mniej, świecąca kropka stałej wielkości.
-- Orbity planet są okrągłe i leżą w jednej płaszczyźnie; księżyce krążą w płaszczyźnie równika swojej planety (np. przechylony Uran). Model jest statyczny.
+- Orbity planet są elipsami (Słońce w ognisku, położenie z równania Keplera) w jednej płaszczyźnie; księżyce
+  krążą w płaszczyźnie równika swojej planety (np. przechylony Uran). Przy przyspieszonym czasie prędkości
+  obrotu i obiegu księżyców są ograniczone do kilkudziesięciu stopni na sekundę, żeby nie migotały.
 - Etykiety mają stały rozmiar kątowy. Gdy kilka ciał nakłada się w polu widzenia, wygrywają ważniejsze
   (Słońce, potem planety zewnętrzne).
 - Przelot do planety zmienia skalę logarytmicznie, więc zoom ×10 000 wygląda płynnie. Przy bardzo dużej skali orbity
