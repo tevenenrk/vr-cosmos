@@ -3,7 +3,7 @@
 Interaktywny Układ Słoneczny w goglach VR, działający w przeglądarce **Meta Quest Browser**.
 Nie trzeba nic instalować w goglach: wystarczy otworzyć stronę i kliknąć **ENTER VR**.
 
-Siedem trybów (przełączane na panelu menu):
+Osiem trybów (przełączane na panelu menu):
 
 - **Tryb 1 – Model:** cały układ do orbity Plutona w prawdziwej skali, z księżycami i pierścieniami.
   Planety krążą po eliptycznych orbitach (prawa Keplera) i obracają się wokół osi, księżyce krążą wokół planet.
@@ -16,29 +16,37 @@ Siedem trybów (przełączane na panelu menu):
 - **Tryb 3 – Ludziki:** planeta generowana w kodzie (średnica 1 m): kontynenty, góry, plaże, śnieżne szczyty
   i czapy polarne, ocean, 450 drzewek i chmurki. Chodzi po niej 30 ludzików z modelu 3D (1 cm wzrostu):
   chodzą, biegają, rozglądają się, machają w Twoją stronę, kucają, podchodzą do siebie i rozmawiają w parach
-  i grupkach. W tle małe Słońce i planetki z kontynentami; Słońce powoli „obiega” planetę, więc jest dzień i noc.
+  i grupkach. Planeta krąży po swojej orbicie wokół Słońca, a Ty lecisz razem z nią: ona zostaje przed Tobą,
+  a daleko w tle (kilkaset metrów) przesuwają się Słońce, inne planety z kontynentami i linie ich orbit. Planetę
+  można tylko obracać i przybliżać się do niej – nie da się jej wyrzucić z orbity. Jest dzień i noc.
   Ludziki idą po rzeźbie terenu (góry, doliny) i omijają morza. Na planecie są 3 wioski z domkami (większość
   ludzików w nich mieszka i do nich wraca), wulkan z lawą w kraterze i dymem, chmura burzowa z deszczem
   i błyskawicami, a wokół krąży księżyc i sztuczny satelita (na sztywno związane z planetą).
   **Kamera za ludzikiem:** wybierz ludzika, a planeta ustawi się tak, że stoi on przed Tobą (powiększony),
-  a świat kręci się pod jego stopami.
+  a świat kręci się pod jego stopami. Słońce i planety na niebie widać także wtedy (i zachodzi Słońce!).
 - **Tryb 4 – Obiekty:** czarna dziura, pulsar, biały karzeł, Ziemia (dla porównania) i kometa. Są w wygodnych rozmiarach, a prawdziwe
   rozmiary podają tabliczki. Pulsar i białego karła można przeciąć.
-- **Tryb 5 – Kosmos:** stoisz w miejscu, zanurzony w setkach miniaturowych galaktyk (700, gęstość
-  zwiększona dla efektu). Droga Mleczna i Andromeda są w prawdziwej skali (1 m = 1 mln lat świetlnych).
+- **Tryb 5 – Kosmos:** stoisz w miejscu, zanurzony w ponad tysiącu miniaturowych galaktyk (1200, gęstość
+  zwiększona dla efektu – naprawdę w okolicy Drogi Mlecznej jest ich mniej). Droga Mleczna i Andromeda są w prawdziwej skali (1 m = 1 mln lat świetlnych).
   Jedyne sterowanie to zoom (gałka lub rozsuwanie dłoni ze spustami): po pomniejszeniu widać trójwymiarowy
-  fragment sieci kosmicznej, ok. 40 tys. galaktyk we włóknach i gromadach; po powiększeniu do 1× wracasz
+  fragment sieci kosmicznej, ok. 80 tys. galaktyk we włóknach i gromadach (w prawdziwym fragmencie tej
+  wielkości jest ich jeszcze więcej, licząc karłowate); po powiększeniu do 1× wracasz
   dokładnie do punktu startu. Tło to sfera z obrazem dalszej części sieci.
 - **Tryb 6 – Skala:** podróż przez 33 rzędy wielkości, od atomu (0,1 nm) przez DNA, wirusa, bakterię, włos,
   mrówkę, człowieka, autobus, płetwala, wieżę Eiffla, Everest, księżyce, Ziemię, Jowisza, Słońce, Betelgezę,
   Układ Słoneczny, heliosferę, obłok Oorta, najbliższe gwiazdy, Plejady, Bąbel Lokalny i ramię Oriona po Drogę
   Mleczną i Grupę Lokalną galaktyk (39 obiektów).
 - **Tryb 7 – Galaktyka:** Droga Mleczna ze 140 tys. gwiazd (4 ramiona spiralne, poprzeczka, zgrubienie
-  centralne). Zoom (gałka, dwie ręce albo przycisk „Leć do Słońca”) prowadzi płynnie przez 11 rzędów
-  wielkości: Galaktyka → sąsiedztwo Słońca (Syriusz, Wega, Betelgeza, Plejady…) → obłok Oorta i orbity planet
-  → samo Słońce. Słońce jest ok. 700 miliardów razy mniejsze od Galaktyki. Kolejne różnią się najwyżej ok. 30×, więc zawsze widać trzy
-  porównywalne obok siebie na wprost: mniejszy z lewej, bieżący w środku, większy z prawej.
-  **Suwak** w menu reguluje prędkość lotu Słońce ↔ Galaktyka.
+  centralne). Zoom (gałka, dwie ręce albo przycisk „Do Ziemi”) prowadzi płynnie przez 13 rzędów
+  wielkości: Galaktyka → sąsiedztwo Słońca (gwiazdy pojawiają się stopniowo, bez „kuli” gęstszych gwiazd) →
+  obłok Oorta i orbity planet → Słońce (podlatujesz, aż ma ok. 3 m) → przelot obok Słońca → Ziemia z Księżycem.
+  Z wnętrza Galaktyki na niebie cały czas widać pas Drogi Mlecznej – tworzą go te same gwiazdy, które z daleka
+  tworzą spiralę. **Suwak** w menu reguluje prędkość lotu.
+- **Tryb 8 – Grawitacja (czasoprzestrzeń):** siatka cienkich linii w przestrzeni (albo „gumowa płachta” 2D),
+  wyginana przez Słońce, Ziemię (krąży wokół Słońca), gwiazdę neutronową, czarną dziurę i parę czarnych dziur,
+  które krążą wokół siebie i wysyłają fale grawitacyjne. Obiekty chwytasz i przesuwasz – siatka wygina się na
+  żywo. Kolor linii: niebieski = płasko, żółty/czerwony = mocne zakrzywienie (tam czas płynie wolniej; podpisy
+  mówią o ile). Efekt jest mocno przesadzony, żeby było go widać.
 
 Ziemia we wszystkich trybach to model 3D z teksturą (`models/earth.glb`).
 
@@ -88,9 +96,8 @@ Skala: od ok. **15 cm** (cały układ w dłoni) do **5 mln ×** (wtedy Ziemia ma
 
 | Akcja | Jak |
 |---|---|
-| Złap planetę jak przedmiot | spust/grip; z daleka (promieniem) planeta przylatuje do ręki (podejrzyj ludziki z bliska!) |
-| Obracaj, oglądaj ludziki z bliska | trzymając, obracaj dłoń i przybliż planetę do oczu; puść w ruchu – poleci i zwolni |
-| Powiększ / zmniejsz | obie ręce (0,1× – 40×) |
+| **Obracaj planetę** | spust/grip celując w planetę i przeciągnij (jak globus) – złapany punkt idzie za promieniem; albo **gałka lewo/prawo** |
+| **Przybliż się / oddal** | **gałka** góra/dół albo obie ręce; planeta rośnie i podchodzi do Ciebie, a Słońce i planety w tle zostają daleko |
 | **Kamera za ludzikiem** | **B** (albo przycisk w menu), potem wyceluj promieniem w ludzika i naciśnij **spust** |
 | W trybie kamery | **gałka** góra/dół = zoom (4× – 80×), lewo/prawo = obejście ludzika dookoła; **B** = puść ludzika |
 
@@ -115,9 +122,18 @@ Napis pod obiektami podaje skalę, np. „1 m w goglach = 2,9 m naprawdę”.
 
 | Akcja | Jak |
 |---|---|
-| Zoom do Słońca / z powrotem | **gałka** góra/dół, oba spusty i rozsuwanie dłoni, albo przyciski **Leć do Słońca** / **Cała Galaktyka** |
+| Lot Galaktyka → Słońce → Ziemia / z powrotem | **gałka** góra/dół, oba spusty i rozsuwanie dłoni, albo przyciski **Do Ziemi** / **Cała Galaktyka** |
+| Gdzie jest Ziemia w czasie przelotu? | po prawej (podpis „Ziemia – tu jesteśmy”); Słońce mijasz z lewej strony |
 | Obrót Galaktyki | **gałka w lewo/prawo** |
 | **Prędkość lotu** | **suwak** w menu (przeciągnij promieniem) |
+
+### Tryb 8 – Grawitacja
+
+| Akcja | Jak |
+|---|---|
+| Włóż obiekt w siatkę | spust/grip na obiekcie (półka przed Tobą, na dole) i przenieś go w siatkę; poza siatką obiekty jej nie wyginają |
+| Siatka 3D / płachta 2D | przycisk w menu (na PC: **S**) |
+| Ziemia na orbicie | puść Ziemię blisko Słońca – zacznie je okrążać |
 
 Na panelu menu widać skalę i **FPS** (cel: 72).
 
@@ -138,7 +154,8 @@ Na panelu menu widać skalę i **FPS** (cel: 72).
    Skróty na PC: **M** = pokaż/schowaj menu; Tryb 1 – **podwójny klik** na planecie = przelot, **+ / −** = zoom układu;
    Tryby 2 i 4 – **C** = przetnij obiekt pod kursorem, **G** = sklej, **T** = rzuć obiekt pod kursorem;
    Tryb 6 – **+ / −** = zoom, **N / P** = następny/poprzedni obiekt, **[ / ]** = prędkość;
-   Tryb 7 – **[ / ]** = prędkość lotu; Tryb 3 – **L** = kamera za ludzikiem (potem klik w ludzika);
+   Tryb 7 – **[ / ]** = prędkość lotu; Tryb 3 – **L** = kamera za ludzikiem (potem klik w ludzika), **+ / −** = przybliż, **strzałki** = obrót planety;
+   Tryb 8 – **S** = siatka 3D / płachta 2D;
    Tryb 1 – **spacja** = pauza, **, / .** = wolniej/szybciej; Tryb 5 – **+ / −** = zoom.
    > Nie otwieraj `index.html` podwójnym kliknięciem: przeglądarka zablokuje moduły JavaScript, bo plik nie idzie przez serwer.
 5. *(Opcjonalnie)* Żeby przetestować VR na PC, zainstaluj w Chrome rozszerzenie
@@ -195,7 +212,9 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 | `MODE3_VILLAGES`, `MODE3_HOUSES_PER_VILLAGE`, `MODE3_HOME_SHARE`, `MODE3_VOLCANO`, `MODE3_STORM`, `MODE3_MOON` | Tryb 3: wioski z domkami, wulkan, burza, księżyc i satelita (`false` = wyłącz) |
 | `MODE3_FOLLOW_SCALE`, `MODE3_FOLLOW_DISTANCE_M`, `MODE3_FOLLOW_DROP_M` | Tryb 3: kamera za ludzikiem (powiększenie, odległość ludzika od Ciebie) |
 | `MODE3_PLANET_DETAIL`, `MODE3_SEA_LEVEL`, `MODE3_MOUNTAIN_HEIGHT`, `MODE3_TREE_COUNT` | Tryb 3: wygląd planety generowanej w kodzie (`MODE3_USE_MODEL_PLANET_FILE = true` – planeta z pliku) |
-| `MW_*` | Tryb 7: liczba gwiazd, rozmiar na starcie, pochylenie, prędkość zoomu (`MW_SPEED_MIN/MAX` – zakres suwaka) |
+| `MW_*` | Tryb 7: liczba gwiazd, rozmiar na starcie, pochylenie, prędkość zoomu (`MW_SPEED_MIN/MAX` – zakres suwaka), `MW_FLY_LOG`/`MW_FLY_LENGTH` – przelot obok Słońca, `MW_NEAR_*` – gwiazdy sąsiedztwa, `MW_SKY_M` – sfera nieba |
+| `MODE3_ORBIT_RADIUS_M`, `MODE3_SUN_RADIUS_M`, `MODE3_YEAR_S` | Tryb 3: jak daleko jest Słońce, jak duże, ile trwa rok planety |
+| `ST_*` | Tryb 8: rozmiar i gęstość siatki, jasność linii, wysokość płachty, okres orbity Ziemi |
 | `MODEL_FILES`, `PERSON_*` | pliki modeli 3D; nazwa animacji chodu i obrót modelu ludzika |
 | `SCALE_*`, `SCALE_OBJECTS` | Tryb 6: lista obiektów (rozmiar, opis), progi znikania, prędkość zoomu |
 | `MENU_*` | panel menu: rozmiar, odległość, położenie zakładki schowanego menu |
@@ -244,9 +263,14 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
   (plaża, łąka, las, skały, śnieg), poniżej poziomu morza jest ocean. Wysokość gruntu pod ludzikami liczy się
   wprost z tego samego wzoru. Machanie, kucanie i gestykulacja przy rozmowie to obroty kości szkieletu Mixamo
   dokładane do animacji stania (plik nie ma takich animacji).
-- **Tryb 7:** każda warstwa (Galaktyka, sąsiedztwo Słońca, Układ Słoneczny) ma własną skalę i jest ustawiona tak,
-  żeby Słońce zawsze było w punkcie zoomu; warstwy płynnie się przenikają, więc liczby zmiennoprzecinkowe nie
-  tracą dokładności przy zoomie ×10¹¹.
+- **Tryb 7:** każda warstwa (Galaktyka, sąsiedztwo Słońca, Układ Słoneczny z Ziemią) ma własną skalę i jest ustawiona tak,
+  żeby punkt zoomu (Słońce, a po przelocie Ziemia) był przed Tobą, więc liczby zmiennoprzecinkowe nie tracą dokładności
+  przy zoomie ×10¹³. Gwiazdy dalej niż 3 km (w goglach) shader rysuje na sferze nieba w tym samym kierunku – stąd pas
+  Drogi Mlecznej z bliska Ziemi. Gwiazdy sąsiedztwa mają „rangę”: przy przybliżaniu pokazuje się ich coraz więcej,
+  a brzeg obszaru jest rozmyty, więc ich gęstość płynnie przechodzi w gęstość reszty Galaktyki.
+- **Tryb 8:** linie siatki są wyginane w shaderze wierzchołków (do 6 mas naraz): w 3D punkty przestrzeni są
+  ściągane w stronę mas, na płachcie głębokość lejka to potencjał grawitacyjny; fale grawitacyjne to dwuramienna
+  spirala rozchodząca się od pary czarnych dziur.
 - **Ludziki na planecie z modelu (opcjonalnie):** trójkąty planety są posortowane w siatkę 128 × 64 kierunków, więc „promień od
   środka” sprawdza tylko kilkadziesiąt trójkątów. Model jest dwuwarstwową skorupą, więc grunt to drugie trafienie.
   Woda jest rozpoznawana po kolorze tekstury (niebieskie = morze).
