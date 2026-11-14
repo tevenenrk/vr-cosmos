@@ -70,6 +70,8 @@ Dziesięć trybów (przełączane na panelu menu):
 - **Tryb 10 – Podróż:** jedna ciągła skala od człowieka (1 m = 1 m) do całego kosmosu: człowiek i autobus →
   wieża Eiffla → Mount Everest na zakrzywionej Ziemi → cała Ziemia (Everest to na niej ułamek milimetra) →
   Księżyc → Układ Słoneczny → najbliższe gwiazdy → Droga Mleczna → Grupa Lokalna (Andromeda) → sieć kosmiczna.
+  Duża Ziemia leży pod Tobą i przy oddalaniu maleje pod stopami; dalej niż Droga Mleczna włącza się (skokiem)
+  pełna scena z Trybu 5 – wszystkie galaktyki, sieć kosmiczna i tło.
 
 Ziemia we wszystkich trybach to model 3D z teksturą (`models/earth.glb`).
 

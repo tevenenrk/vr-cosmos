@@ -5736,8 +5736,9 @@ for (const m of mw.mats.glow) m.userData.baseOpacity = m.opacity;
 // =====================================================================
 const J_EARTH_R = 6.371e6;
 const J_LOG_MAX = Math.log10(M_PER_LY / J_SCALE_START_M);        // 1 m w goglach = J_SCALE_START_M m naprawdę
-const J_LOG_MIN = Math.log10(1.6 / 3e8);                          // ~300 mln lat św. sieci kosmicznej w ~1,6 m
-const J_SURFACE_FROM = 8.6, J_SURFACE_TO = 11.0;                  // punkt zoomu przechodzi ze środka Ziemi na jej powierzchnię
+const J_LOG_MIN = Math.log10(MODE5_SCALE_MIN * 1e-6);            // najmocniejsze oddalenie Trybu 5 (sieć kosmiczna)
+const J_BELOW_FROM = 8.8, J_BELOW_TO = 9.9;                       // tu Ziemia przechodzi z "przed Tobą" na "pod Tobą"
+const J_COSMOS_LOG = Math.log10(MODE5_SCALE_MAX * 1e-6);             // dalej: pełna scena z Trybu 5 (galaktyki, sieć, tło)
 state.journey = false;
 const journey = (() => {
   const layer = new THREE.Group();                                // powierzchnia: jednostki = metry, (0,0,0) = stopy człowieka
@@ -5834,11 +5835,13 @@ function layoutMode10() {
   state.journey = true;
   state.mwLog = J_LOG_MAX;
   state.jFloorY = renderer.xr.isPresenting ? 0 : eyePos.y - 1.6;
+  state.jEye = eyePos.clone();
+  state.jCosmos = false;
 }
 const mwLogMin = () => (state.journey ? J_LOG_MIN : MW_LOG_MIN);
 const mwLogMax = () => (state.journey ? J_LOG_MAX : MW_LOG_MAX);
 
-const _jA = new THREE.Vector3(), _jB = new THREE.Vector3(), _jQ = new THREE.Quaternion();
+const _jE = new THREE.Vector3(), _jA = new THREE.Vector3(), _jB = new THREE.Vector3(), _jC = new THREE.Vector3(), _jD = new THREE.Vector3(), _jN = new THREE.Vector3(), _jQ = new THREE.Quaternion(), _jQ2 = new THREE.Quaternion();
 // co klatkę (z updateMode7): powierzchnia Ziemi, Ziemia, sieć kosmiczna
 function updateJourney(dt, L, s, w, w2, Rk, piv, sAU) {
   const J = journey, on = state.journey;
@@ -5855,10 +5858,14 @@ function updateJourney(dt, L, s, w, w2, Rk, piv, sAU) {
   J.earthWrap.position.copy(C);
   J.earthWrap.scale.setScalar(Rk);
   J.earthWrap.visible = L > 3 && L < 11.4;          // bliżej – grunt (czasza) w pełnej rozdzielczości
-  const S = _jB.copy(C).addScaledVector(UP, Rk);
+  // stopy człowieka: punkt Ziemi najbliższy miejscu na podłodze przed Tobą
+  const H = _jD.copy(state.jEye).addScaledVector(state.mwFwd, MW_DISTANCE_M);
+  H.y = state.jFloorY;
+  const n = _jN.copy(H).sub(C).normalize();
+  const S = _jB.copy(C).addScaledVector(n, Rk);
   J.layer.position.copy(S);
   J.layer.scale.setScalar(k);
-  J.layer.quaternion.setFromAxisAngle(UP, state.mwYaw).multiply(_jQ.setFromUnitVectors(new THREE.Vector3(0, 0, -1), state.mwFwd));
+  J.layer.quaternion.setFromUnitVectors(UP, n).multiply(_jQ2.setFromAxisAngle(UP, state.mwYaw)).multiply(_jQ.setFromUnitVectors(new THREE.Vector3(0, 0, -1), state.mwFwd));
   J.layer.visible = L > 10.6;
   J.ground.visible = L > 11.2;
   for (const it of J.items) {
@@ -5869,11 +5876,11 @@ function updateJourney(dt, L, s, w, w2, Rk, piv, sAU) {
     if (it.label.visible) placeLabel(it.label, _jA.copy(it.g.position).setY(it.g.position.y + it.top).applyMatrix4(J.layer.matrixWorld), 0.02, LABEL_ANGLE_DEG * 1.2);
   }
   J.layer.updateMatrixWorld(true);
-  J.earthLabel.visible = Rk > 0.05 && Rk < 30 && L > 6;
+  J.earthLabel.visible = Rk > 0.05 && Rk < 2.5 && L > 6;
   if (J.earthLabel.visible) placeLabel(J.earthLabel, C, Rk * 1.1, LABEL_ANGLE_DEG * 1.2);
   // sieć kosmiczna: Droga Mleczna (jej środek) w miejscu Galaktyki z Trybu 7
   const sMly = s * 1e6;
-  const webA = THREE.MathUtils.smoothstep(-L, 3.6, 4.6);          // widać, gdy Galaktyka jest mniejsza niż ~3 m
+  const webA = 0;                                                  // dalej niż Galaktyka: pełna scena Trybu 5 (journeyCosmos)
   J.web.visible = webA > 0.01;
   if (J.web.visible) {
     const G = _jA.copy(SUN_GAL).multiplyScalar(-s).applyQuaternion(mwQuat).add(piv);   // środek Galaktyki
@@ -5901,7 +5908,8 @@ function journeyFocusText(L) {
   if (m < 2e13) return 'Układ Słoneczny';
   if (m < 2e17) return 'najbliższe gwiazdy';
   if (m < 2e21) return 'Droga Mleczna';
-  if (m < 5e22) return 'Grupa Lokalna (Andromeda)';
+  if (L >= J_COSMOS_LOG) return 'Droga Mleczna z daleka';
+  if (m < 3e22) return 'Grupa Lokalna: Droga Mleczna, Andromeda i setki galaktyk wokół';
   return 'sieć kosmiczna – włókna i gromady galaktyk';
 }
 
@@ -5963,13 +5971,28 @@ function setLayerOpacity(mats, alpha, group) {
 }
 
 const _mwF = new THREE.Vector3(), _mwP = new THREE.Vector3(), _mwW = new THREE.Vector3();
-function updateMode7(dt) {
+function mwStepAnim(dt) {
   const a = state.mwAnim;
   if (a) {
     a.t = Math.min(1, a.t + dt / a.dur);
     state.mwLog = THREE.MathUtils.lerp(a.from, a.to, smooth(a.t));
     if (a.t >= 1) state.mwAnim = null;
   }
+}
+// Tryb 10, dalej niż Galaktyka: pełna scena kosmosu z Trybu 5 (wszystkie galaktyki, sieć, tło) – z przeskokiem
+function journeyCosmos(dt) {
+  mwStepAnim(dt);
+  if (state.mwLog >= J_COSMOS_LOG) {
+    if (state.jCosmos) { state.jCosmos = false; mode5Group.visible = false; mode7Group.visible = true; }
+    updateMode7(dt);
+    return;
+  }
+  if (!state.jCosmos) { state.jCosmos = true; mode7Group.visible = false; mode5Group.visible = true; layoutMode5(); }
+  setUniverseScale(Math.pow(10, state.mwLog + 6));
+  updateGalaxies(dt);
+}
+function updateMode7(dt) {
+  mwStepAnim(dt);
   const { L, w } = mwPath(state.mwLog);
   const s = Math.pow(10, L), sAU = s / AU_PER_LY;      // s = metry na rok świetlny
   mwOrientation(L);
@@ -5980,13 +6003,20 @@ function updateMode7(dt) {
   const push = Math.max(0, SUN_R_AU * sAU + 0.7 - MW_DISTANCE_M) * (1 - w);
   const piv = _mwP.copy(mwPivot).addScaledVector(state.mwFwd, push);
   mwSkyUniforms.uCenter.value.copy(mwPivot);
-  // Tryb 10: punkt zoomu schodzi ze środka Ziemi na jej powierzchnię (do stóp człowieka), a grunt – na podłogę
+  // Tryb 10: duża Ziemia leży POD Tobą (jej powierzchnia = podłoga), a przy oddalaniu maleje pod stopami;
+  // dopiero gdy jest mała (< ~5 m), przesuwa się przed Ciebie – nigdy nie przelatujesz przez jej wnętrze
   let w2 = 0, Rk = 0;
   if (state.journey) {
-    w2 = THREE.MathUtils.smoothstep(L, J_SURFACE_FROM, J_SURFACE_TO);
     Rk = J_EARTH_R * s / M_PER_LY;
-    const toFloor = (mwPivot.y - state.jFloorY) * THREE.MathUtils.smoothstep(L, 13.5, 15.5);
-    piv.addScaledVector(UP, -(Rk * w2 + toFloor));
+    const t = THREE.MathUtils.smoothstep(L, J_BELOW_FROM, J_BELOW_TO);   // 0 = przed Tobą, 1 = pod Tobą
+    if (t > 0) {
+      const E = state.jEye;
+      const d0 = _jC.copy(mwPivot).sub(E), d0len = d0.length();
+      const dirC = _jE.copy(d0).normalize().lerp(_jD.set(0, -1, 0), t).normalize();
+      const hF = E.y - state.jFloorY;
+      const D = Math.max(THREE.MathUtils.lerp(d0len, Rk + hF, t), Rk + 0.35);
+      piv.add(_jC.copy(E).addScaledVector(dirC, D).sub(mwPivot));   // środek Ziemi tutaj
+    }
   }
   const place = (g, focusLocal, scale) => {
     g.quaternion.copy(mwQuat);
@@ -6969,6 +6999,7 @@ function setMode(mode) {
   mode5Group.visible = mode === 5;
   mode6Group.visible = mode === 6;
   mode7Group.visible = mode === 7 || mode === 10;
+  state.jCosmos = false;
   mode8Group.visible = mode === 8;
   mode9Group.visible = mode === 9;
   stars.visible = mode !== 5 && mode !== 7 && mode !== 10;
@@ -7658,7 +7689,7 @@ renderer.setAnimationLoop((time, frame) => {
     updateHeadlight(mode8Light);
   } else if (state.mode === 7 || state.mode === 10) {
     updateMode5Pinch(() => Math.pow(10, state.mwLog), mwSetScale, 4);   // mocniej – zakres to 11 rzędów wielkości
-    updateMode7(dt);
+    if (state.mode === 10) journeyCosmos(dt); else updateMode7(dt);
   }
   if (!shelf) cutPreview.visible = knife.visible = false;
 
