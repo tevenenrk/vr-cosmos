@@ -361,7 +361,10 @@ const SR_TRACK_LENGTH_M = 16;          // tor przelotu statku (z miarką co 0,5 
 const SR_DISTANCE_M = 2.4;             // tor tyle przed Tobą [m]
 const SR_SHIP_LENGTH_M = 1.6;          // długość statku w spoczynku [m]
 const SR_CLOCK_HEIGHT_M = 0.5;         // zegar świetlny: odległość lusterek [m]
-const SR_SPEEDS = [0.1, 0.5, 0.87, 0.99, 0.999];   // prędkości do wyboru (ułamek prędkości światła)
+const SR_SPEEDS = [0, 0.1, 0.5, 0.87, 0.99, 0.999];   // prędkości do wyboru (ułamek prędkości światła)
+
+// --- Tryb 10: podróż od człowieka do całego kosmosu -----------------------------
+const J_SCALE_START_M = 1;             // na starcie 1 m w goglach = 1 m naprawdę (człowiek w prawdziwej wielkości)
 
 // --- Menu (panel w VR) ------------------------------------------------
 const MENU_WIDTH_M = 0.48;          // szerokość panelu [m]
@@ -1990,7 +1993,7 @@ function atmosphereTexture(color) {
   return canvasTexture(cv);
 }
 
-function enterSurface(A) {
+function enterSurface(A, hitN = null) {
   exitSurface();
   setKnife(false);
   cancelAllGrabs();
@@ -2003,8 +2006,12 @@ function enterSurface(A) {
   const side = new THREE.Vector3().crossVectors(toB, UP);
   if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
   side.normalize();
-  const n = toB.clone().applyAxisAngle(side, Math.PI / 2 - SURFACE_ELEVATION_DEG * DEG);   // "góra" w miejscu, gdzie stoisz
-  const f = toB.clone().addScaledVector(n, -toB.dot(n)).normalize();                       // kierunek do B po horyzoncie
+  // stoisz dokładnie w klikniętym miejscu (hitN); bez kliknięcia – tam, skąd B jest SURFACE_ELEVATION_DEG nad horyzontem
+  const n = hitN ? hitN.clone().normalize() : toB.clone().applyAxisAngle(side, Math.PI / 2 - SURFACE_ELEVATION_DEG * DEG);
+  let f = toB.clone().addScaledVector(n, -toB.dot(n));                                     // twarzą w stronę B
+  if (f.lengthSq() < 1e-4) f = horizontalForward().clone().addScaledVector(n, -horizontalForward().dot(n));
+  if (f.lengthSq() < 1e-4) f = new THREE.Vector3(1, 0, 0).addScaledVector(n, -n.x);
+  f.normalize();
   const E = cA.clone().addScaledVector(n, RA);
   const fw = horizontalForward().clone();
   const qs = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(f, n), n, f.clone().negate()));
@@ -2082,7 +2089,16 @@ function exitSurface() {
 function surfaceAction(origin, dir) {             // stań na wskazanej planecie (albo wróć)
   if (state.surf) { exitSurface(); return; }
   const res = pickShelf(shelf2, origin, dir);
-  if (res) enterSurface(res.entry.kind === 'half' ? res.entry.pair.whole : res.entry);
+  if (res) {
+    const A = res.entry.kind === 'half' ? res.entry.pair.whole : res.entry;
+    // punkt na kuli, w który celujesz – tam stajesz
+    const C = A.obj.position, r = A.R * A.obj.scale.x;
+    _gRay.set(origin, dir);
+    let hit = res.near ? origin.clone() : _gRay.intersectSphere(_gSphere.set(C, r), new THREE.Vector3());
+    if (!hit) hit = _gRay.closestPointToPoint(C, new THREE.Vector3());
+    const n = hit.sub(C);
+    enterSurface(A, n.lengthSq() > 1e-10 ? n.normalize() : null);
+  }
   else { state.surfPick = !state.surfPick; drawMenu(); }
 }
 
@@ -2820,6 +2836,63 @@ const m3Clouds = new THREE.Group();
   m3Planet.add(m3Clouds);
 }
 
+// Atmosfera: niebieska poświata wokół planety i lekka mgiełka przy jej krawędzi (kolor zależy od temperatury)
+const m3Atmo = (() => {
+  const shared = { uColor: { value: new THREE.Color(0x6fa8ff) }, uStrength: { value: 1 }, uInside: { value: 0 } };
+  const vert = `
+#include <common>
+#include <logdepthbuf_pars_vertex>
+varying vec3 vN;
+varying vec3 vP;
+void main() {
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vN = normalize(normalMatrix * normal);
+  vP = mv.xyz;
+  gl_Position = projectionMatrix * mv;
+  #include <logdepthbuf_vertex>
+}`;
+  const frag = back => `
+#include <common>
+#include <logdepthbuf_pars_fragment>
+uniform vec3 uColor;
+uniform float uStrength;
+uniform float uInside;
+varying vec3 vN;
+varying vec3 vP;
+void main() {
+  #include <logdepthbuf_fragment>
+  float d = dot(normalize(vN), normalize(-vP));
+  float i;
+  ${back ? `if (uInside > 0.5) i = 0.18 + 0.3 * (1.0 - abs(d));          // z wnętrza: niebo, jaśniejsze przy horyzoncie
+  else i = pow(clamp(-d / 0.42, 0.0, 1.0), 1.6);                        // z zewnątrz: poświata przy krawędzi planety`
+    : `i = pow(clamp(1.0 - d, 0.0, 1.0), 3.0) * 0.55;`}
+  gl_FragColor = vec4(uColor * i * uStrength, 1.0);
+}`;
+  const make = (r, back) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 64, 32), new THREE.ShaderMaterial({
+      uniforms: shared, vertexShader: vert, fragmentShader: frag(back),
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: back ? THREE.BackSide : THREE.FrontSide,
+    }));
+    m.frustumCulled = false;
+    m3Planet.add(m);
+    return m;
+  };
+  const halo = make(M3_R * 1.1, true), rim = make(M3_R * 1.015, false);
+  return { shared, halo, rim, goal: { color: new THREE.Color(0x6fa8ff), strength: 1 } };
+})();
+const M3_ATMO = { '-30': [0xcfe6ff, 0.9], 15: [0x6fa8ff, 1], 40: [0x8fc0ff, 1.05], 80: [0xd8d8d0, 1.2], 300: [0xe8b060, 1.8] };
+function m3SetAtmosphere(T, color = null, strength = null) {
+  const a = M3_ATMO[T] || M3_ATMO[15];
+  m3Atmo.goal.color.setHex(color ?? a[0]);
+  m3Atmo.goal.strength = strength ?? a[1];
+}
+function m3UpdateAtmosphere(dt) {
+  const k = Math.min(1, dt * 1.2), sh = m3Atmo.shared;
+  sh.uColor.value.lerp(m3Atmo.goal.color, k);
+  sh.uStrength.value += (m3Atmo.goal.strength - sh.uStrength.value) * k;
+  sh.uInside.value = eyePos.distanceTo(m3Planet.position) < M3_R * 1.1 * m3Planet.scale.x ? 1 : 0;
+}
+
 // --- Wioski, wulkan, chmura burzowa, księżyc i satelita (wszystko jako część planety) ---
 const m3Extras = { houses: [], smoke: [], lava: null, storm: null, moon: null, sat: null };
 // ustawia obiekt na powierzchni: kierunek d, wysokość nad środkiem r, obrót wokół pionu
@@ -3263,7 +3336,22 @@ function updatePeople(dt) {
     P.time += dt;
     // co jakiś czas zmiana czynności
     P.actionT -= dt;
-    if (P.actionT <= 0) startBehavior(P, ...pickBehavior());
+    if (P.actionT <= 0) { P.watch = null; startBehavior(P, ...pickBehavior()); }
+    // cel ze scenariusza: idź/biegnij do punktu, potem schowaj się w domu albo stań i patrz
+    if (P.hidden) { if (P.action !== 'idle') startBehavior(P, 'idle', 5); P.actionT = Math.max(P.actionT, 1); }
+    else if (P.goal) {
+      P.goalT -= dt;
+      faceToward(P, P.goal, dt * 6);
+      const act = P.goalRun ? 'run' : 'walk';
+      if (P.action !== act) startBehavior(P, act, 30);
+      if (P.p.angleTo(P.goal) < (P.goalThen === 'hide' ? 0.018 : 0.025) || P.goalT <= 0) {
+        const then = P.goalThen;
+        P.goal = null;
+        if (then === 'hide') P.hidden = true;
+        else startBehavior(P, 'idle', then === 'watch' ? 12 : 2 + Math.random() * 3);
+      }
+    }
+    if (P.watch && !P.goal && P.action === 'idle') faceToward(P, P.watch, dt * 3);
     if (P.action === 'approach') {                   // idzie do rozmówcy; na miejscu – rozmowa
       const T = P.target;
       if (!T || T.action === 'walk' || T.action === 'run') startBehavior(P, 'walk', 4);
@@ -3273,7 +3361,7 @@ function updatePeople(dt) {
     if (P.action === 'talk' && P.target) faceToward(P, P.target.p, dt * 3);
     if (P.action === 'wave') faceToward(P, eyeOnPlanet(), dt * 3);
     const speedK = P.action === 'run' ? MODE3_RUN_SPEED_FACTOR : (P.action === 'walk' || P.action === 'approach') ? 1 : 0;
-    const v = P.speed * speedK;
+    const v = P.speed * speedK * (P.hidden ? 0 : m3W.speedK || 1);
     for (const k of ['wave', 'squat', 'talk']) {     // płynne narastanie/zanikanie ruchów
       const goal = P.action === k ? 1 : 0;
       P.ov[k] += THREE.MathUtils.clamp(goal - P.ov[k], -dt * 2.5, dt * 2.5);
@@ -3289,7 +3377,7 @@ function updatePeople(dt) {
       P.checkIn = 0.2;
       _q1.setFromAxisAngle(_right, MODE3_PERSON_HEIGHT_M * 2.5 / M3_R);
       _ahead.copy(P.p).applyQuaternion(_q1);
-      if (P.avoid <= 0 && (m3Surface.query(_ahead).water || isObstacle(_ahead))) { P.avoid = 0.8; P.turn = (Math.random() < 0.5 ? -1 : 1) * 3; }
+      if (P.avoid <= 0 && !P.goal && (m3Surface.query(_ahead).water || isObstacle(_ahead))) { P.avoid = 0.8; P.turn = (Math.random() < 0.5 ? -1 : 1) * 3; }
       // daleko od domu? -> zawróć w stronę swojej wioski
       if (P.home && P.avoid <= 0 && P.action === 'walk' && P.p.angleTo(P.home) > MODE3_VILLAGE_RADIUS_RAD * 2.2) faceToward(P, P.home, 0.5);
     }
@@ -3306,7 +3394,7 @@ function updatePeople(dt) {
     _right.crossVectors(P.p, P.f);                       // x = prawo, y = góra (od środka planety), z = przód
     _v1.copy(P.p).multiplyScalar(P.r);
     if (P.model) {
-      P.model.root.visible = !m3W.peopleHidden;
+      P.model.root.visible = !P.hidden;
       P.model.root.matrix.makeBasis(_right, P.p, P.f).setPosition(_v1);
       P.model.root.matrixWorldNeedsUpdate = true;
       P.model.mixer.update(dt * (speedK === 1 ? P.speed / MODE3_PERSON_SPEED_MPS : 1));
@@ -3334,7 +3422,7 @@ function updatePeople(dt) {
 //   tornado, tsunami, uderzenie meteorytu. Zmiany rzeźby (góry, krater, zastygła lawa) zostają do "Reset".
 // =====================================================================
 const M3_TEMPS = [-30, 15, 40, 80, 300];
-const M3_EVENTS = ['quake', 'volcano', 'tornado', 'tsunami', 'meteor'];
+const M3_EVENTS = ['quake', 'volcano', 'tornado', 'tsunami', 'meteor', 'rocket', 'greenhouse'];
 const M3_TEMP_NOTES = {
   '-30': 'Epoka lodowa (−30°C): oceany zamarzły, ląd pod śniegiem',
   15: '',
@@ -3380,6 +3468,9 @@ function m3WorldInit() {
   m3W.waterGoal = { color: m3W.waterBase.color.clone(), opacity: m3W.waterBase.opacity, rough: m3W.waterBase.rough, scale: 1 };
   if (m3Trees.trunks) m3W.treeMat0 = { t: Float32Array.from(m3Trees.trunks.instanceMatrix.array), c: Float32Array.from(m3Trees.crowns.instanceMatrix.array) };
   m3W.cloudMat = m3Clouds.children[0].material;
+  m3W.cloudMat.transparent = true;
+  m3W.cloudGoal = 1;
+  m3W.speedK = 1;
   // grupa, którą trzęsiemy przy trzęsieniu ziemi: wszystko, co jest na planecie
   const kids = [...m3Planet.children];
   m3Planet.add(m3W.shake);
@@ -3436,7 +3527,19 @@ function setM3Temperature(T) {
     : T >= 80 ? { color: new THREE.Color(0x3a8a80), opacity: 0.85, rough: 0.2, scale: 0.99 }
     : { color: wb.color.clone(), opacity: wb.opacity, rough: wb.rough, scale: 1 };
   m3Flags.dry = T >= 300;
-  m3W.peopleHidden = T >= 80;
+  // ludzie: przy 80°C i więcej chowają się w domach, w mrozie trzymają się wiosek, w upale zwalniają
+  const prevT = m3W.prevT === undefined ? 15 : m3W.prevT;
+  m3W.prevT = T;
+  if (T >= 80) { for (const P of people) if (!P.hidden && !m3Shelter(P, 3)) P.hidden = true; }
+  else {
+    if (prevT >= 80) m3UnhideAll();
+    if (T <= -10) for (const P of people) if (P.home) m3Go(P, P.home, 'idle');
+  }
+  m3W.speedK = T <= -10 ? 0.6 : T >= 40 ? 0.8 : 1;
+  // chmury: w upale ich ubywa, przy 80°C i 300°C znikają (woda wyparowała); burza tylko w umiarkowanym klimacie
+  m3W.cloudGoal = { '-30': 0.85, 15: 1, 40: 0.5, 80: 0, 300: 0 }[T];
+  if (m3Extras.storm) m3Extras.storm.storm.visible = T === 15 || T === 40;
+  m3SetAtmosphere(T);
   if (m3Trees.crowns) {
     m3Trees.trunks.visible = m3Trees.crowns.visible = T < 300;
     const cm = m3Trees.crowns.material;
@@ -3514,6 +3617,51 @@ function m3SetRing(line, c, ang, lift = 0.003, fixedR = 0) {
   }
   p.needsUpdate = true;
 }
+// ---------- "namiastka inteligencji": ludziki reagują na to, co się dzieje
+// m3Go: idź (run = biegnij) do punktu, a potem: 'hide' – schowaj się w domu, 'watch' – stań i patrz na watch, 'idle'
+function m3Go(P, dir, then = 'idle', run = false, watch = null) {
+  P.goal = dir.clone().normalize(); P.goalThen = then; P.goalRun = run; P.goalT = 25;
+  P.watch = watch ? watch.clone() : null;
+  startBehavior(P, run ? 'run' : 'walk', 30);
+}
+function m3Watch(P, dir, dur = 8) { if (P.hidden) return; P.goal = null; P.watch = dir.clone(); startBehavior(P, 'idle', dur); }
+// punkt dalej od c (o kąt ang) – ucieczka
+function m3AwayPoint(P, c, ang) {
+  const axis = new THREE.Vector3().crossVectors(c, P.p);
+  if (axis.lengthSq() < 1e-8) axis.copy(m3Tangents(P.p)[0]);
+  return P.p.clone().applyAxisAngle(axis.normalize(), ang);
+}
+function m3NearestHouse(p) {
+  let best = null, ba = Infinity;
+  for (const h of m3Extras.houses) { const a = p.angleTo(h.d); if (a < ba) { ba = a; best = h; } }
+  return best ? { d: best.d, a: ba } : null;
+}
+function m3Shelter(P, maxAng = 0.5) {
+  if (P.hidden) return true;
+  const h = m3NearestHouse(P.p);
+  if (h && h.a < maxAng) { m3Go(P, h.d, 'hide', true); return true; }
+  return false;
+}
+// najwyżej położony punkt w okolicy (ucieczka przed tsunami)
+function m3Uphill(p, reach = 0.12) {
+  let best = p, bh = -9;
+  const [t1, t2] = m3Tangents(p);
+  for (let k = 0; k < 12; k++) {
+    const a = k / 12 * Math.PI * 2;
+    const d = p.clone().addScaledVector(t1, Math.cos(a) * reach).addScaledVector(t2, Math.sin(a) * reach).normalize();
+    const h = m3Proc.height(d);
+    if (h > bh) { bh = h; best = d; }
+  }
+  return best;
+}
+function m3UnhideAll() {
+  for (const P of people) {
+    if (P.hidden) { P.hidden = false; startBehavior(P, 'walk', 4); }
+    P.goal = null; P.watch = null;
+  }
+}
+function m3PeopleNear(c, ang) { return people.filter(P => !P.hidden && P.p.angleTo(c) < ang); }
+
 // ludzie w okolicy: przewracają się ("fall") albo uciekają ("run") od punktu c
 function m3Panic(c, ang, how) {
   for (const P of people) {
@@ -3549,8 +3697,9 @@ function m3UpdateParts(ev, dt) {
   for (let i = ev.parts.length - 1; i >= 0; i--) {
     const q = ev.parts[i];
     q.age += dt;
-    const dead = q.age >= q.life || (q.hit && q.s.position.length() < m3SurfR(_w1.copy(q.s.position).normalize()));
-    if (dead) { q.s.removeFromParent(); q.s.material.dispose(); ev.parts.splice(i, 1); continue; }
+    let dead = q.age >= q.life || (q.hit && q.s.position.length() < m3SurfR(_w1.copy(q.s.position).normalize()));
+    if (!dead && q.fn && q.fn(q) === false) dead = true;
+    if (dead) { if (q.onDie && q.age < q.life) q.onDie(q); q.s.removeFromParent(); q.s.material.dispose(); ev.parts.splice(i, 1); continue; }
     if (q.g) q.v.addScaledVector(_w1.copy(q.s.position).normalize(), -q.g * dt);
     if (q.drag) q.v.multiplyScalar(Math.exp(-q.drag * dt));
     q.s.position.addScaledVector(q.v, dt);
@@ -3645,7 +3794,8 @@ const M3_SCENARIOS = {
       // trzęsienie ziemi
       if (T >= 12) {
         if (!ev.fell) { ev.fell = true; m3Panic(c, 0.9, 'fall'); }
-        if (!ev.ran && T > 14.5) { ev.ran = true; m3Panic(c, 0.9, 'run'); }
+        // po wstrząsie: uciekają z dala od domów, na otwartą przestrzeń, i patrzą w stronę epicentrum
+        if (!ev.ran && T > 14.5) { ev.ran = true; for (const P of m3PeopleNear(c, 0.9)) m3Go(P, m3AwayPoint(P, c, 0.12), 'watch', true, c); }
         const q = T - 12;
         ev.shake = 0.0035 * Math.exp(-q / 2.5);
         ev.rings.forEach((r, k) => {
@@ -3682,7 +3832,8 @@ const M3_SCENARIOS = {
       else ev.shake = T < 14 ? 0.0006 : 0;
       const [t1, t2] = m3Tangents(up);
       const erupt = T > 2 && T < 14;
-      if (erupt && !ev.fled) { ev.fled = true; m3Panic(up, 0.7, 'run'); }
+      if (!ev.looked) { ev.looked = true; for (const P of m3PeopleNear(up, 0.9)) m3Watch(P, up, 3); }   // co to za huk?
+      if (erupt && !ev.fled) { ev.fled = true; for (const P of m3PeopleNear(up, 0.6)) m3Go(P, m3AwayPoint(P, up, 0.3), 'watch', true, up); }
       ev.glow.material.opacity = erupt ? 0.7 + 0.3 * Math.sin(T * 9) : Math.max(0, ev.glow.material.opacity - dt);
       // popiół: ciemne kłęby wysoko w niebo, rozwiewane przez wiatr
       ev.ashT = (ev.ashT || 0) - dt;
@@ -3780,7 +3931,11 @@ const M3_SCENARIOS = {
       const here = d.clone();
       m3KillTrees(q => q.angleTo(here) < 0.03 * grow);
       ev.panicT = (ev.panicT || 0) - dt;
-      if (ev.panicT <= 0) { ev.panicT = 1.5; m3Panic(here, 0.16, 'run'); }
+      if (ev.panicT <= 0) {
+        ev.panicT = 1;
+        // blisko domu – chowają się w środku; w polu – uciekają w bok od trąby
+        for (const P of m3PeopleNear(here, 0.22)) if (!P.goal && !m3Shelter(P, 0.1)) m3Go(P, m3AwayPoint(P, here, 0.18), 'watch', true, here);
+      }
       return 'Tornado: powietrze wiruje z prędkością do ~300 km/h – drzewa są wyrywane, ludzie uciekają';
     },
   },
@@ -3844,11 +3999,11 @@ const M3_SCENARIOS = {
         m3W.flood[i] = f;
       });
       m3ApplyColors(ev.coast);
-      // ludzie przy brzegu uciekają w głąb lądu, gdy fala się zbliża
+      // ludzie przy brzegu uciekają pod górę (najwyższy punkt w okolicy), potem patrzą na morze
       for (const P of people) {
-        if (ev.ran.has(P)) continue;
+        if (ev.ran.has(P) || P.hidden) continue;
         const a = P.p.angleTo(c);
-        if (a < front + 0.15 && a < 0.8) { ev.ran.add(P); startBehavior(P, 'run', 5); faceToward(P, _w1.copy(P.p).multiplyScalar(2).sub(c).normalize(), 1); }
+        if (a < front + 0.25 && a < 0.85 && m3Proc.height(P.p) < 0.12) { ev.ran.add(P); m3Go(P, m3Uphill(m3Uphill(P.p)), 'watch', true, c); }
       }
       return T < 1.5 ? 'Trzęsienie ziemi pod dnem oceanu wypycha w górę ogromną masę wody'
         : T < 13 ? 'Tsunami: na otwartym oceanie fala jest niska i bardzo szybka, przy brzegu rośnie i zalewa ląd'
@@ -3861,22 +4016,36 @@ const M3_SCENARIOS = {
     },
   },
 
-  // Meteoryt: wpada w atmosferę, wybija krater, fala uderzeniowa i pył
+  // Meteoryt: najpierw kilka sekund ostrzeżenia (skąd leci i gdzie uderzy), potem wejście w atmosferę i uderzenie
   meteor: {
-    dur: 16,
+    dur: 22,
     start(ev) {
       const vill = m3Features.villages;
-      const c = m3RandomDir(d => { const h = m3Proc.height(d); return h > 0.03 && h < 0.2 && vill.every(v => d.angleTo(v) > 0.35) && (!m3Features.volcano || d.angleTo(m3Features.volcano) > 0.3); })
+      const c = m3RandomDir(d => { const h = m3Proc.height(d); return h > 0.03 && h < 0.2 && vill.every(v => d.angleTo(v) > 0.35) && vill.some(v => d.angleTo(v) < 0.8) && (!m3Features.volcano || d.angleTo(m3Features.volcano) > 0.3); })
         || m3RandomDir(d => m3Proc.height(d) > 0.02);
       ev.c = c;
-      const [t1] = m3Tangents(c);
-      ev.from = c.clone().multiplyScalar(M3_R * 2.4).addScaledVector(t1, M3_R * 1.2);
+      const [t1, t2] = m3Tangents(c);
+      const inc = c.clone().multiplyScalar(0.55).addScaledVector(t1, 0.8).addScaledVector(t2, 0.25).normalize();   // skąd nadlatuje
+      ev.far = inc.clone().multiplyScalar(M3_R * 7).addScaledVector(t2, M3_R * 0.6);
+      ev.from = inc.clone().multiplyScalar(M3_R * 2.2);
       ev.to = c.clone().multiplyScalar(m3SurfR(c));
-      ev.rock = makeGlowSprite(0xfff0c0, 0.025, 1);
+      ev.rock = new THREE.Group();
+      ev.rock.add(new THREE.Mesh(new THREE.DodecahedronGeometry(0.008, 0), new THREE.MeshStandardMaterial({ color: 0x6a5e54, roughness: 1 })));
+      ev.glow = makeGlowSprite(0xfff0c0, 0.03, 0.4);
+      ev.rock.add(ev.glow);
+      // przewidywany tor (przerywana czerwona linia) i znacznik miejsca uderzenia
+      const pts = [];
+      for (let k = 0; k <= 40; k++) { const f = k / 40; pts.push(new THREE.Vector3().lerpVectors(ev.far, ev.from, f)); }
+      for (let k = 1; k <= 10; k++) pts.push(new THREE.Vector3().lerpVectors(ev.from, ev.to, k / 10));
+      ev.path = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineDashedMaterial({ color: 0xff4040, dashSize: 0.025, gapSize: 0.018, transparent: true, opacity: 0.9 }));
+      ev.path.computeLineDistances();
+      ev.path.frustumCulled = false;
+      ev.markers = [m3Ring(0xff3030), m3Ring(0xff8080, 0.6)];
       ev.trail = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
         new THREE.LineBasicMaterial({ color: 0xffb060, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }));
       ev.trail.frustumCulled = false;
-      ev.objs.add(ev.rock, ev.trail);
+      ev.trail.visible = false;
+      ev.objs.add(ev.rock, ev.trail, ev.path, ...ev.markers);
       const CR = 0.045, DEPTH = 0.011;
       ev.field = m3AddField(d => {
         const a = d.angleTo(c);
@@ -3892,21 +4061,44 @@ const M3_SCENARIOS = {
       ev.noise = makeNoise3('ejecta' + Math.random());
     },
     update(ev, dt) {
-      const T = ev.time, c = ev.c, HIT = 2.5;
+      const T = ev.time, c = ev.c, WARN = 5, HIT = 7;
       if (T < HIT) {
-        const f = (T / HIT) ** 2;
+        const pulse = 0.5 + 0.5 * Math.sin(T * 8);
+        m3SetRing(ev.markers[0], c, 0.03 + 0.01 * pulse, 0.004);
+        m3SetRing(ev.markers[1], c, 0.012, 0.004);
+        ev.markers[0].material.opacity = 0.5 + 0.5 * pulse;
+        ev.rock.rotation.x += dt * 2; ev.rock.rotation.y += dt * 1.3;
+        if (!ev.looked && T > 0.5) { ev.looked = true; for (const P of m3PeopleNear(c, 1.3)) m3Watch(P, c, 8); }   // patrzą w niebo
+        if (!ev.fled && T > 2.2) {                       // w miejscu uderzenia: do domów albo jak najdalej
+          ev.fled = true;
+          for (const P of m3PeopleNear(c, 0.5)) if (P.p.angleTo(c) > 0.2 || !m3Shelter(P, 0.08)) m3Go(P, m3AwayPoint(P, c, 0.4), 'watch', true, c);
+        }
+      }
+      if (T < WARN) {
+        ev.rock.position.lerpVectors(ev.far, ev.from, smooth(T / WARN) * 0.85 + (T / WARN) * 0.15);
+        ev.glow.material.opacity = 0.4;
+        return 'Wykryto meteoryt! Czerwona linia: skąd leci i gdzie uderzy – ludzie uciekają z tego miejsca';
+      }
+      if (T < HIT) {
+        const f = ((T - WARN) / (HIT - WARN)) ** 2;
         ev.rock.position.lerpVectors(ev.from, ev.to, f);
+        ev.glow.material.opacity = 1;
+        ev.glow.scale.setScalar(0.03 + 0.03 * f);
+        ev.trail.visible = true;
         ev.trail.geometry.attributes.position.setXYZ(0, ev.rock.position.x, ev.rock.position.y, ev.rock.position.z);
-        _w1.lerpVectors(ev.from, ev.to, Math.max(0, f - 0.25));
+        _w1.lerpVectors(ev.from, ev.to, Math.max(0, f - 0.3));
         ev.trail.geometry.attributes.position.setXYZ(1, _w1.x, _w1.y, _w1.z);
         ev.trail.geometry.attributes.position.needsUpdate = true;
-        return 'Meteoryt! Wpada w atmosferę z prędkością ok. 20 km/s i rozgrzewa się do białości';
+        ev.path.material.opacity = 0.9 * (1 - f);
+        return 'Meteoryt wpada w atmosferę z prędkością ok. 20 km/s i rozgrzewa się do białości';
       }
       if (!ev.hit) {
         ev.hit = true;
-        ev.rock.visible = ev.trail.visible = false;
-        m3Panic(c, 0.9, 'fall');
+        ev.rock.visible = ev.trail.visible = ev.path.visible = false;
+        for (const m of ev.markers) m.visible = false;
+        m3Panic(c, 0.7, 'fall');
         m3KillTrees(d => d.angleTo(c) < ev.CR * 2.4);
+        for (const P of people) if (P.hidden && P.p.angleTo(c) < ev.CR) P.hidden = false;
         const [t1, t2] = m3Tangents(c);
         for (let k = 0; k < 26; k++) {             // pył wyrzucony w niebo
           const a = Math.random() * Math.PI * 2, sp = 0.02 + Math.random() * 0.04;
@@ -3916,7 +4108,7 @@ const M3_SCENARIOS = {
         }
       }
       const q = T - HIT;
-      if (!ev.ran && q > 2) { ev.ran = true; m3Panic(c, 0.9, 'run'); }
+      if (!ev.watched && q > 2.2) { ev.watched = true; for (const P of m3PeopleNear(c, 1.2)) m3Watch(P, c, 6); }   // wstają i patrzą na krater
       ev.flash.material.opacity = Math.max(0, 1 - q * 0.8);
       ev.shake = 0.004 * Math.exp(-q / 1.5);
       ev.field.k = Math.min(1, q / 0.5);
@@ -3945,7 +4137,178 @@ const M3_SCENARIOS = {
     },
     end() { if (m3CosmosParts.light) m3CosmosParts.light.intensity = MODE3_SUN_LIGHT; },
   },
+
+  // Start rakiety: znacznik na starcie, odliczanie, lot w górę, orbita, ucieczka w daleki kosmos
+  rocket: {
+    dur: 27,
+    start(ev) {
+      const vill = m3Features.villages;
+      const c = m3RandomDir(d => { const h = m3Proc.height(d); return h > 0.02 && h < 0.12 && vill.some(v => d.angleTo(v) > 0.12 && d.angleTo(v) < 0.3) && (!m3Features.volcano || d.angleTo(m3Features.volcano) > 0.4) && !isObstacle(d); })
+        || m3RandomDir(d => m3Proc.height(d) > 0.02);
+      ev.c = c;
+      const [t1, t2] = m3Tangents(c), a = Math.random() * Math.PI * 2;
+      ev.t = t1.clone().multiplyScalar(Math.cos(a)).addScaledVector(t2, Math.sin(a));
+      ev.Rs = m3SurfR(c);
+      const up = new THREE.Quaternion().setFromUnitVectors(UP, c);
+      const grey = new THREE.MeshStandardMaterial({ color: 0x8a8e96, roughness: 0.7 });
+      const pad = new THREE.Group();
+      pad.add(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.002, 24), grey));
+      const tower = new THREE.Mesh(new THREE.BoxGeometry(0.002, 0.03, 0.002), new THREE.MeshStandardMaterial({ color: 0xc04030 }));
+      tower.position.set(0.006, 0.015, 0);
+      pad.add(tower);
+      pad.position.copy(c).multiplyScalar(ev.Rs); pad.quaternion.copy(up);
+      ev.marker = m3Ring(0xffe040);
+      ev.beam = new THREE.Line(new THREE.BufferGeometry().setFromPoints([c.clone().multiplyScalar(ev.Rs), c.clone().multiplyScalar(ev.Rs + 0.15)]),
+        new THREE.LineBasicMaterial({ color: 0xffe040, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending }));
+      ev.beam.frustumCulled = false;
+      // rakieta (oś +Y), podstawa w zerze
+      const rk = new THREE.Group();
+      const white = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.4, metalness: 0.2 });
+      const red = new THREE.MeshStandardMaterial({ color: 0xd03a2a, roughness: 0.5 });
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.0026, 0.0026, 0.02, 16), white); body.position.y = 0.012;
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.0026, 0.007, 16), red); nose.position.y = 0.0255;
+      rk.add(body, nose);
+      for (let k = 0; k < 3; k++) {
+        const fin = new THREE.Mesh(new THREE.BoxGeometry(0.0008, 0.005, 0.004), red);
+        const ang = k / 3 * Math.PI * 2;
+        fin.position.set(Math.cos(ang) * 0.003, 0.004, Math.sin(ang) * 0.003); fin.rotation.y = -ang;
+        rk.add(fin);
+      }
+      ev.flame = makeGlowSprite(0xffb050, 0.014, 0);
+      ev.flame.position.y = -0.003;
+      rk.add(ev.flame);
+      rk.position.copy(c).multiplyScalar(ev.Rs); rk.quaternion.copy(up);
+      ev.rocket = rk;
+      ev.N = 300;
+      ev.trail = new THREE.Line(new THREE.BufferGeometry().setFromPoints(Array.from({ length: ev.N }, () => rk.position.clone())),
+        new THREE.LineBasicMaterial({ color: 0xdfe8ff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending }));
+      ev.trail.frustumCulled = false;
+      ev.objs.add(pad, ev.marker, ev.beam, rk, ev.trail);
+      ev.prev = rk.position.clone();
+      ev.viewers = [];
+    },
+    update(ev, dt) {
+      const T = ev.time, c = ev.c, t = ev.t, Ro = M3_R * 1.35;
+      let phi = 0, r = ev.Rs, note, thrust = 0;
+      // ludzie: przychodzą popatrzeć (z bezpiecznej odległości)
+      if (!ev.gathered && T > 0.2) {
+        ev.gathered = true;
+        for (const P of m3PeopleNear(c, 0.5)) {
+          const axis = new THREE.Vector3().crossVectors(c, P.p);
+          if (axis.lengthSq() < 1e-8) continue;
+          const spot = c.clone().applyAxisAngle(axis.normalize(), 0.07 + Math.random() * 0.04);
+          m3Go(P, spot, 'watch', false, c);
+          ev.viewers.push(P);
+        }
+      }
+      if (T < 5) {
+        note = `Start rakiety za ${Math.ceil(5 - T)}… (żółty znacznik: miejsce startu) – ludzie przychodzą popatrzeć`;
+        const pulse = 0.5 + 0.5 * Math.sin(T * 6);
+        m3SetRing(ev.marker, c, 0.03 + 0.008 * pulse, 0.003);
+        ev.marker.material.opacity = 0.5 + 0.5 * pulse;
+        if (T > 4) thrust = (T - 4) * 0.5;
+      } else if (T < 10) {
+        const u = (T - 5) / 5;
+        r = ev.Rs + (Ro - ev.Rs) * smooth(u);
+        phi = 0.55 * u * u;
+        thrust = 1;
+        note = 'Start! Rakieta leci pionowo w górę, potem się przechyla, żeby nabrać prędkości w bok';
+        ev.smokeT = (ev.smokeT || 0) - dt;
+        if (T < 7.5 && ev.smokeT <= 0) {
+          ev.smokeT = 0.08;
+          const [t1, t2] = m3Tangents(c), a = Math.random() * Math.PI * 2;
+          const v = _w1.copy(c).multiplyScalar(0.004).addScaledVector(t1, Math.cos(a) * 0.02).addScaledVector(t2, Math.sin(a) * 0.02);
+          m3AddPart(ev, m3Puff(0xe8e4dc, 0.012, 0.7), c.clone().multiplyScalar(ev.Rs + 0.003), v, 4, { drag: 0.6, grow: 3 });
+        }
+      } else if (T < 18) {
+        const tau = T - 10;
+        phi = tau < 2 ? 0.55 + 0.22 * tau + 0.07 * tau * tau : 1.27 + 0.5 * (tau - 2);
+        r = Ro;
+        thrust = tau < 1.5 ? 0.6 : 0;
+        note = 'Rakieta na orbicie: leci tak szybko w bok, że cały czas „spada” obok planety';
+      } else {
+        const tau = T - 18;
+        phi = 4.27 + 0.5 * tau - 0.03 * tau * tau;
+        r = Ro * Math.exp(0.38 * tau);
+        thrust = tau < 3 ? 1 : 0.4;
+        note = 'Silnik znów pracuje: rakieta ucieka z orbity w daleki kosmos';
+        const fade = Math.min(1, (ev.dur - T) / 3);
+        ev.rocket.scale.setScalar(Math.max(0.01, fade));
+        ev.trail.material.opacity = 0.55 * fade;
+      }
+      if (T >= 5) { ev.marker.material.opacity = Math.max(0, ev.marker.material.opacity - dt); ev.beam.material.opacity = Math.max(0, ev.beam.material.opacity - dt); }
+      const pos = _w1.copy(c).multiplyScalar(Math.cos(phi)).addScaledVector(t, Math.sin(phi)).multiplyScalar(r);
+      ev.rocket.position.copy(pos);
+      const vel = _w2.copy(pos).sub(ev.prev);
+      if (vel.lengthSq() > 1e-12) ev.rocket.quaternion.slerp(_gq.setFromUnitVectors(UP, vel.normalize()), Math.min(1, dt * 6));
+      ev.prev.copy(pos);
+      ev.flame.material.opacity = thrust * (0.8 + 0.2 * Math.random());
+      ev.flame.scale.setScalar(0.01 + 0.012 * thrust);
+      if (T >= 4.8) {
+        const a = ev.trail.geometry.attributes.position;
+        a.array.copyWithin(0, 3);
+        a.setXYZ(ev.N - 1, pos.x, pos.y, pos.z);
+        a.needsUpdate = true;
+      }
+      // widzowie śledzą rakietę wzrokiem, po wejściu na orbitę machają
+      ev.watchT = (ev.watchT || 0) - dt;
+      if (T > 5 && ev.watchT <= 0) { ev.watchT = 0.4; for (const P of ev.viewers) if (!P.goal && !P.hidden) { P.watch = pos.clone().normalize(); if (P.action !== 'idle' && P.action !== 'wave') startBehavior(P, 'idle', 6); } }
+      if (!ev.waved && T > 10.5) { ev.waved = true; for (const P of ev.viewers) if (!P.goal && !P.hidden && Math.random() < 0.7) startBehavior(P, 'wave', 3); }
+      return note;
+    },
+  },
+
+  // Efekt cieplarniany: CO₂ rośnie, ciepło (czerwone) coraz częściej wraca na planetę, robi się gorąco
+  greenhouse: {
+    dur: 28,
+    start(ev) {
+      m3W.event = ev;
+      setM3Temperature(40);                            // cel: +25°C …
+      if (m3W.trans) m3W.trans.dur = 20;               // … osiągany powoli
+      m3SetAtmosphere(15);
+      ev.layer = new THREE.Mesh(new THREE.SphereGeometry(M3_R * 1.1, 48, 24),
+        new THREE.MeshBasicMaterial({ color: 0xb0905a, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+      ev.objs.add(ev.layer);
+      ev.sunT = 0;
+    },
+    update(ev, dt) {
+      const T = ev.time, k = THREE.MathUtils.clamp(T / 20, 0, 1);
+      const ppm = Math.round(280 + 720 * k), temp = Math.round(15 + 25 * k);
+      ev.layer.material.opacity = 0.18 * k;
+      if (!ev.hazed && T > 6) { ev.hazed = true; m3SetAtmosphere(40, 0xc8b890, 1.5); }
+      if (!ev.rise && T > 10) { ev.rise = true; m3W.waterGoal.scale = 1.003; }      // poziom mórz rośnie
+      if (!ev.shade && T > 15) { ev.shade = true; for (const P of people) if (Math.random() < 0.45) m3Shelter(P, 0.3); }
+      // kierunek do Słońca (w układzie planety)
+      const sunW = m3Helio.getWorldPosition(_w3);
+      const sun = m3W.shake.worldToLocal(sunW.clone()).normalize();
+      const [t1, t2] = m3Tangents(sun);
+      const trap = 0.12 + 0.75 * k;
+      ev.sunT -= dt;
+      if (T < ev.dur - 3 && ev.sunT <= 0) {
+        ev.sunT = 0.07;
+        const a = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * M3_R * 0.85;
+        const p0 = sun.clone().multiplyScalar(M3_R * 1.9).addScaledVector(t1, Math.cos(a) * rr).addScaledVector(t2, Math.sin(a) * rr);
+        // światło słoneczne (żółte) dochodzi do powierzchni i ogrzewa ją; ta oddaje ciepło (czerwone) w górę
+        m3AddPart(ev, makeGlowSprite(0xffe860, 0.01, 0.9), p0, sun.clone().multiplyScalar(-0.3), 5, { hit: true, fade: false, onDie: q => {
+          const d = q.s.position.clone().normalize();
+          m3AddPart(ev, makeGlowSprite(0xff4a2a, 0.011, 0.9), q.s.position.clone().multiplyScalar(1.005), d.multiplyScalar(0.12), 6, { fade: false, fn: h => {
+            const len = h.s.position.length();
+            if (!h.bounced && len > M3_R * 1.1) {
+              h.bounced = true;
+              if (Math.random() < trap) h.v.multiplyScalar(-1);   // zatrzymane przez CO₂ – wraca na planetę
+            }
+            if (len > M3_R * 1.8) return false;                     // uciekło w kosmos
+            if (h.bounced && len < M3_R) return false;
+            return true;
+          } });
+        } });
+      }
+      return T < 20 ? `Efekt cieplarniany: CO₂ ${ppm} ppm, średnio ${temp}°C – ciepło (czerwone) coraz częściej wraca na planetę`
+        : 'Lodowce stopniały, poziom mórz wzrósł, upał – część ludzi chowa się w domach';
+    },
+  },
 };
+
 
 function m3StartEvent(type) {
   if (state.mode !== 3 || !m3WorldInit()) return;
@@ -3966,6 +4329,7 @@ function m3EndEvent() {
   ev.objs.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
   m3W.event = null;
   m3W.shake.position.set(0, 0, 0);
+  if (m3W.T < 80) m3UnhideAll();
   m3W.note = m3W.tempNote;
   drawMenu();
 }
@@ -3973,6 +4337,8 @@ function m3EndEvent() {
 function m3WorldReset() {
   if (!m3W.ready) return;
   m3EndEvent();
+  m3UnhideAll();
+  m3W.prevT = 15;
   m3DynFields.length = 0;
   m3W.geo.attributes.position.array.set(m3W.basePos);
   m3W.geo.attributes.position.needsUpdate = true;
@@ -3996,7 +4362,7 @@ function updateM3World(dt) {
   // płynna zmiana temperatury
   const tr = m3W.trans;
   if (tr) {
-    tr.t = Math.min(1, tr.t + dt / 2.5);
+    tr.t = Math.min(1, tr.t + dt / (tr.dur || 2.5));
     const e = smooth(tr.t), col = m3W.geo.attributes.color.array;
     for (let i = 0; i < col.length; i++) col[i] = tr.from[i] + (tr.to[i] - tr.from[i]) * e;
     m3W.geo.attributes.color.needsUpdate = true;
@@ -4011,6 +4377,12 @@ function updateM3World(dt) {
     w.scale.setScalar(w.scale.x + (g.scale - w.scale.x) * k);
     w.visible = w.material.opacity > 0.02;
   }
+  // chmury
+  const cm = m3W.cloudMat;
+  cm.opacity += ((m3W.cloudGoal ?? 1) - cm.opacity) * Math.min(1, dt * 0.8);
+  m3Clouds.children[0].visible = cm.opacity > 0.02;
+  // atmosfera
+  m3UpdateAtmosphere(dt);
   // para wodna nad oceanami przy 80°C
   const steamOn = m3W.T >= 80 && m3W.T < 300;
   for (const sp of m3W.steam) {
@@ -5064,7 +5436,7 @@ function scaleZoom(amountDecades) {
 
 // Suwak prędkości: Tryb 6 – zoom skali, Tryb 7 – przelot Galaktyka ↔ Słońce
 function speedSlider() {
-  return state.mode === 7
+  return state.mode === 7 || state.mode === 10
     ? { v: state.mwSpeed, min: MW_SPEED_MIN, max: MW_SPEED_MAX, set: v => { state.mwSpeed = v; } }
     : { v: state.scaleSpeed, min: SCALE_SPEED_MIN, max: SCALE_SPEED_MAX, set: v => { state.scaleSpeed = v; } };
 }
@@ -5355,6 +5727,184 @@ const mw = (() => {
 })();
 for (const m of mw.mats.glow) m.userData.baseOpacity = m.opacity;
 
+// =====================================================================
+//  TRYB 10: PODRÓŻ – od człowieka do całego kosmosu (jedna, ciągła skala)
+//   Korzysta ze sceny Trybu 7 (Galaktyka, sąsiedztwo, Układ Słoneczny) i dokłada:
+//   – powierzchnię Ziemi w prawdziwej skali: człowiek, wieża Eiffla, Mount Everest na zakrzywionym gruncie,
+//   – sieć kosmiczną i Grupę Lokalną galaktyk (Andromeda) poza Drogą Mleczną.
+//   Punkt zoomu: człowiek → (Ziemia schodzi w dół, widać jej krzywiznę) → środek Ziemi → Słońce → Galaktyka.
+// =====================================================================
+const J_EARTH_R = 6.371e6;
+const J_LOG_MAX = Math.log10(M_PER_LY / J_SCALE_START_M);        // 1 m w goglach = J_SCALE_START_M m naprawdę
+const J_LOG_MIN = Math.log10(1.6 / 3e8);                          // ~300 mln lat św. sieci kosmicznej w ~1,6 m
+const J_SURFACE_FROM = 8.6, J_SURFACE_TO = 11.0;                  // punkt zoomu przechodzi ze środka Ziemi na jej powierzchnię
+state.journey = false;
+const journey = (() => {
+  const layer = new THREE.Group();                                // powierzchnia: jednostki = metry, (0,0,0) = stopy człowieka
+  mode7Group.add(layer);
+  // grunt: czasza kuli (promień Ziemi) – gęsta siatka blisko człowieka, rzadsza dalej
+  const A = 0.08, NR = 120, NS = 160;
+  const pos = [], col = [], idx = [];
+  const noise = makeNoise3('journey'), c = new THREE.Color(), c2 = new THREE.Color();
+  const EV = new THREE.Vector3(14000, 0, -26000);                 // Everest: 30 km na wprost i w prawo
+  pos.push(0, 0, 0); col.push(0.38, 0.6, 0.3);
+  for (let i = 1; i <= NR; i++) {
+    const a = A * Math.pow(i / NR, 2.2);
+    for (let j = 0; j < NS; j++) {
+      const f = j / NS * Math.PI * 2;
+      const x = J_EARTH_R * Math.sin(a) * Math.cos(f), z = J_EARTH_R * Math.sin(a) * Math.sin(f);
+      const y = J_EARTH_R * (Math.cos(a) - 1);
+      pos.push(x, y, z);
+      const n = noise(x / 9000, 0, z / 9000, 3), dEv = Math.hypot(x - EV.x, z - EV.z);
+      c.setHex(n > 0.15 ? 0x4f7f3a : n > -0.2 ? 0x6a9a48 : 0x8a8a5a);
+      if (dEv < 60000) c.lerp(c2.setHex(0x8a7f72), 1 - dEv / 60000);                 // Himalaje: skały
+      col.push(c.r, c.g, c.b);
+    }
+  }
+  for (let j = 0; j < NS; j++) idx.push(0, 1 + (j + 1) % NS, 1 + j);
+  for (let i = 1; i < NR; i++) for (let j = 0; j < NS; j++) {
+    const a0 = 1 + (i - 1) * NS + j, a1 = 1 + (i - 1) * NS + (j + 1) % NS, b0 = a0 + NS, b1 = a1 + NS;
+    idx.push(a0, a1, b0, a1, b1, b0);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  ground.frustumCulled = false;
+  layer.add(ground, new THREE.HemisphereLight(0xcfe4ff, 0x5a6a4a, 1.2));
+  const sunL = new THREE.DirectionalLight(0xfff4e0, 1.6);
+  sunL.position.set(0.4, 1, 0.3);
+  layer.add(sunL, sunL.target);
+  // obiekty w prawdziwej wielkości (modele z Trybu 6)
+  const drop = d => J_EARTH_R * (Math.cos(d / J_EARTH_R) - 1);       // krzywizna: ile grunt opada na odległość d
+  const put = (id, x, z, yaw = 0) => {
+    const def = SCALE_OBJECTS.find(o => o.id === id);
+    const m = (SCALE_BUILDERS[id] || SCALE_BUILDERS.hamster)();
+    const g = new THREE.Group();
+    g.add(m);
+    m.traverse(o => { o.frustumCulled = false; });
+    g.scale.setScalar(def.sizeM);
+    g.position.set(x, drop(Math.hypot(x, z)), z);
+    g.rotation.y = yaw;
+    layer.add(g);
+    const label = makeLabel(`${def.name} · ${def.sizeText}`);
+    label.material.depthTest = false; label.renderOrder = 40;
+    mode7Group.add(label);
+    return { def, g, label, mixer: m.userData.mixer || null, top: def.sizeM };
+  };
+  const items = [put('human', 0, 0, Math.PI), put('bus', 6, -14, 0.4), put('eiffel', -170, -420, 0.3), put('everest', EV.x, EV.z, 0)];
+  // Ziemia (model z teksturą) – zastępuje Ziemię z Trybu 7; ląd u góry
+  const earth = buildVisual(BODIES.find(b => b.id === 'earth'), 1).group;
+  const earthWrap = new THREE.Group();
+  earthWrap.add(earth);
+  earth.rotation.set(0.5, 2.1, 0);
+  mode7Group.add(earthWrap);
+  const earthLabel = makeLabel('Ziemia · średnica 12 742 km');
+  mode7Group.add(earthLabel);
+  // sieć kosmiczna i Grupa Lokalna (jednostki: mln lat św.; Droga Mleczna w (0,-0.35,-0.7) jak w Trybie 5)
+  const web = new THREE.Group();
+  const webPts = new THREE.Points(cosmos.web.geometry, skyPointsMaterial(2.0));
+  webPts.frustumCulled = false;
+  const gp = [], gc = [];
+  for (const gx of galaxies) { if (gx.fixed) continue; gp.push(gx.pos.x, gx.pos.y, gx.pos.z); gc.push(0.7, 0.75, 0.9); }
+  const gg = new THREE.BufferGeometry();
+  gg.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3));
+  gg.setAttribute('color', new THREE.Float32BufferAttribute(gc, 3));
+  const nearGal = new THREE.Points(gg, skyPointsMaterial(2.6));
+  nearGal.frustumCulled = false;
+  const andro = galaxyQuad('spiral2', 0.22, 0, 0);
+  andro.position.set(0.55, 0.25, -0.8).normalize().multiplyScalar(2.5);
+  andro.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0.9, 0.35, 0.3).normalize());
+  web.add(webPts, nearGal, andro);
+  web.visible = false;
+  mode7Group.add(web);
+  const webLabels = [['Galaktyka Andromedy (2,5 mln lat św.)', andro.position.clone()], ['Gromada w Pannie (54 mln lat św.)', new THREE.Vector3(-30, 18, -42).normalize().multiplyScalar(54)]]
+    .map(([t, p]) => { const l = makeLabel(t); mode7Group.add(l); return { l, p }; });
+  const mats = [webPts.material, nearGal.material, andro.material];
+  for (const m of mats) m.userData.baseOpacity = m.opacity;
+  return { layer, ground, items, earthWrap, earthLabel, web, webLabels, mats, mwPosInWeb: new THREE.Vector3(0, -0.35, -0.7) };
+})();
+journey.layer.visible = journey.earthWrap.visible = false;
+
+function layoutMode10() {
+  state.journey = true;
+  layoutMode7();
+  state.journey = true;
+  state.mwLog = J_LOG_MAX;
+  state.jFloorY = renderer.xr.isPresenting ? 0 : eyePos.y - 1.6;
+}
+const mwLogMin = () => (state.journey ? J_LOG_MIN : MW_LOG_MIN);
+const mwLogMax = () => (state.journey ? J_LOG_MAX : MW_LOG_MAX);
+
+const _jA = new THREE.Vector3(), _jB = new THREE.Vector3(), _jQ = new THREE.Quaternion();
+// co klatkę (z updateMode7): powierzchnia Ziemi, Ziemia, sieć kosmiczna
+function updateJourney(dt, L, s, w, w2, Rk, piv, sAU) {
+  const J = journey, on = state.journey;
+  J.layer.visible = J.earthWrap.visible = J.web.visible = on && true;
+  for (const it of J.items) it.label.visible = false;
+  J.earthLabel.visible = false;
+  for (const wl of J.webLabels) wl.l.visible = false;
+  if (!on) return;
+  mw.earth.visible = false;
+  mw.labels.earth.visible = mw.labels.earth.visible && L < 8.6;
+  const k = s / M_PER_LY;                                          // metry w goglach na 1 m naprawdę
+  // środek Ziemi (dokładnie, w liczbach podwójnej precyzji) i punkt pod stopami człowieka
+  const C = _jA.copy(mwEarthDir).multiplyScalar(1 - w).multiplyScalar(sAU).applyQuaternion(mwQuat).add(piv);
+  J.earthWrap.position.copy(C);
+  J.earthWrap.scale.setScalar(Rk);
+  J.earthWrap.visible = L > 3 && L < 11.4;          // bliżej – grunt (czasza) w pełnej rozdzielczości
+  const S = _jB.copy(C).addScaledVector(UP, Rk);
+  J.layer.position.copy(S);
+  J.layer.scale.setScalar(k);
+  J.layer.quaternion.setFromAxisAngle(UP, state.mwYaw).multiply(_jQ.setFromUnitVectors(new THREE.Vector3(0, 0, -1), state.mwFwd));
+  J.layer.visible = L > 10.6;
+  J.ground.visible = L > 11.2;
+  for (const it of J.items) {
+    if (it.mixer) it.mixer.update(dt);
+    const h = it.top * k;                                          // wysokość w goglach
+    it.g.visible = h > 0.0005 && L > 9.5;
+    it.label.visible = J.layer.visible && h > 0.02 && h < 60;
+    if (it.label.visible) placeLabel(it.label, _jA.copy(it.g.position).setY(it.g.position.y + it.top).applyMatrix4(J.layer.matrixWorld), 0.02, LABEL_ANGLE_DEG * 1.2);
+  }
+  J.layer.updateMatrixWorld(true);
+  J.earthLabel.visible = Rk > 0.05 && Rk < 30 && L > 6;
+  if (J.earthLabel.visible) placeLabel(J.earthLabel, C, Rk * 1.1, LABEL_ANGLE_DEG * 1.2);
+  // sieć kosmiczna: Droga Mleczna (jej środek) w miejscu Galaktyki z Trybu 7
+  const sMly = s * 1e6;
+  const webA = THREE.MathUtils.smoothstep(-L, 3.6, 4.6);          // widać, gdy Galaktyka jest mniejsza niż ~3 m
+  J.web.visible = webA > 0.01;
+  if (J.web.visible) {
+    const G = _jA.copy(SUN_GAL).multiplyScalar(-s).applyQuaternion(mwQuat).add(piv);   // środek Galaktyki
+    J.web.quaternion.copy(mwQuat);
+    J.web.scale.setScalar(sMly);
+    J.web.position.copy(J.mwPosInWeb).multiplyScalar(-sMly).applyQuaternion(mwQuat).add(G);
+    for (const m of J.mats) m.opacity = m.userData.baseOpacity * webA;
+    for (const wl of J.webLabels) {
+      wl.l.visible = webA > 0.5 && L > -7.5;
+      if (wl.l.visible) placeLabel(wl.l, _jB.copy(wl.p).sub(J.mwPosInWeb).multiplyScalar(sMly).applyQuaternion(mwQuat).add(G), 0.03, LABEL_ANGLE_DEG * 1.2);
+    }
+  }
+}
+// co jest "na pierwszym planie" przy danej skali (do napisu na panelu)
+function journeyFocusText(L) {
+  const m = M_PER_LY / Math.pow(10, L);                            // ile metrów naprawdę = 1 m w goglach
+  const evMm = 8849 / (J_EARTH_R * 2) * Math.max(0.2, 2 * J_EARTH_R / m) * 1000;
+  if (m < 8) return 'człowiek';
+  if (m < 60) return 'autobus';
+  if (m < 2000) return 'wieża Eiffla';
+  if (m < 60000) return 'Mount Everest';
+  if (m < 2e6) return 'Himalaje i krzywizna Ziemi';
+  if (m < 4e7) return `cała Ziemia – Everest byłby na niej wysoki na ${evMm < 1 ? evMm.toFixed(2) : evMm.toFixed(1)} mm`;
+  if (m < 2e9) return 'Ziemia i Księżyc';
+  if (m < 2e13) return 'Układ Słoneczny';
+  if (m < 2e17) return 'najbliższe gwiazdy';
+  if (m < 2e21) return 'Droga Mleczna';
+  if (m < 5e22) return 'Grupa Lokalna (Andromeda)';
+  return 'sieć kosmiczna – włókna i gromady galaktyk';
+}
+
 const mwPivot = new THREE.Vector3();
 const mwQuat = new THREE.Quaternion();
 const mwEarthDir = new THREE.Vector3(1, 0, 0);          // kierunek Słońce -> Ziemia (w płaszczyźnie orbit, j.a.)
@@ -5379,6 +5929,7 @@ function mwOrientation(L = -99) {
 }
 
 function layoutMode7() {
+  state.journey = false;
   const fwd = horizontalForward();
   mwPivot.copy(eyePos).addScaledVector(fwd, MW_DISTANCE_M);
   mwPivot.y = eyePos.y - 0.15;
@@ -5400,9 +5951,9 @@ function layoutMode7() {
   mw.moon.position.copy(mwEarthDir).multiplyScalar(0.8).addScaledVector(side, -0.6).normalize().multiplyScalar(MOON_DIST_AU);
   if (!renderer.xr.isPresenting) orbitControls.target.copy(mwPivot);
 }
-function mwZoom(decades) { state.mwAnim = null; state.mwLog = THREE.MathUtils.clamp(state.mwLog + decades, MW_LOG_MIN, MW_LOG_MAX); }
+function mwZoom(decades) { state.mwAnim = null; state.mwLog = THREE.MathUtils.clamp(state.mwLog + decades, mwLogMin(), mwLogMax()); }
 function mwGoTo(log) { state.mwAnim = { from: state.mwLog, to: log, t: 0, dur: Math.max(1, Math.abs(log - state.mwLog) / state.mwSpeed) }; }
-function mwSetScale(s) { state.mwAnim = null; state.mwLog = THREE.MathUtils.clamp(Math.log10(s), MW_LOG_MIN, MW_LOG_MAX); }
+function mwSetScale(s) { state.mwAnim = null; state.mwLog = THREE.MathUtils.clamp(Math.log10(s), mwLogMin(), mwLogMax()); }
 
 // płynne pojawianie/znikanie warstwy w zakresie skali (log10 m/rok św.)
 const fadeWindow = (L, a0, a1, b0, b1) => Math.max(0, Math.min(1, (L - a0) / (a1 - a0), (b1 - L) / (b1 - b0)));
@@ -5429,6 +5980,14 @@ function updateMode7(dt) {
   const push = Math.max(0, SUN_R_AU * sAU + 0.7 - MW_DISTANCE_M) * (1 - w);
   const piv = _mwP.copy(mwPivot).addScaledVector(state.mwFwd, push);
   mwSkyUniforms.uCenter.value.copy(mwPivot);
+  // Tryb 10: punkt zoomu schodzi ze środka Ziemi na jej powierzchnię (do stóp człowieka), a grunt – na podłogę
+  let w2 = 0, Rk = 0;
+  if (state.journey) {
+    w2 = THREE.MathUtils.smoothstep(L, J_SURFACE_FROM, J_SURFACE_TO);
+    Rk = J_EARTH_R * s / M_PER_LY;
+    const toFloor = (mwPivot.y - state.jFloorY) * THREE.MathUtils.smoothstep(L, 13.5, 15.5);
+    piv.addScaledVector(UP, -(Rk * w2 + toFloor));
+  }
   const place = (g, focusLocal, scale) => {
     g.quaternion.copy(mwQuat);
     g.scale.setScalar(scale);
@@ -5456,6 +6015,7 @@ function updateMode7(dt) {
   setLayerOpacity(mw.mats.solar, solarA, mw.solar);
   mw.oort.material.opacity = solarA * (1 - THREE.MathUtils.smoothstep(L, 5.5, 6.5));
   mw.earthSys.visible = L > 3;
+  mw.earth.visible = !state.journey;
 
   // znane gwiazdy: blisko – w przestrzeni, daleko – na niebie
   const namedA = THREE.MathUtils.smoothstep(L, -3.0, -2.4);
@@ -5497,6 +6057,7 @@ function updateMode7(dt) {
     lb.neptune.visible = p.distanceTo(piv) < 60;
     placeLabel(lb.neptune, p, 0.02, LABEL_ANGLE_DEG);
   }
+  updateJourney(dt, L, s, w, w2, Rk, piv, sAU);
 }
 
 // =====================================================================
@@ -5989,6 +6550,7 @@ function photonY(t, vy) {
 }
 const _sr1 = new THREE.Vector3();
 function updateMode9(dt) {
+  if (state.srShip) { updateSrShip(dt); return; }
   const c = SR_LIGHT_SPEED_MPS, b = state.srBeta, g = srGamma();
   if (!state.srPaused) {
     sr.tYou += dt;
@@ -6024,6 +6586,179 @@ function updateMode9(dt) {
   placeBoard(sr.restBoard, _sr1.copy(sr.resting.position).addScaledVector(sr.right, -1.75), -0.1, 2.6);
 }
 
+// ---------- Widok z pokładu: jak wygląda kosmos z pędzącego statku (zgodnie ze szczególną teorią względności)
+//  1) Aberracja światła: kierunek do każdego źródła przesuwa się do przodu: cos θ' = (cos θ + β) / (1 + β cos θ)
+//     – gwiazdy zbierają się przed Tobą, a mijane obiekty wyginają się (tzw. obrót Terrella).
+//  2) Efekt Dopplera: światło z przodu ma wyższą częstotliwość (niebieskie), z tyłu niższą (czerwone):
+//     czynnik D = γ (1 + β cos θ); gwiazda o temperaturze T wygląda jak gwiazda o temperaturze D·T,
+//     a lampka świecąca falą λ wygląda jak λ / D (może zniknąć – przejść w podczerwień lub nadfiolet).
+//  3) Jasność: z przodu jaśniej (~D³), z tyłu ciemniej („efekt reflektora”).
+//  Obiekty stoją w miejscu, a Ty lecisz przez nie wzdłuż −Z.
+const SR_SHIP_GLSL = `
+uniform float uBeta;
+// d – kierunek do źródła w układzie gwiazd (jednostkowy), ruch wzdłuż −Z; zwraca kierunek widziany ze statku
+vec3 srAberrate(vec3 d, out float D) {
+  float ct = -d.z;
+  float g = 1.0 / sqrt(1.0 - uBeta * uBeta);
+  D = g * (1.0 + uBeta * ct);
+  float ct2 = (ct + uBeta) / (1.0 + uBeta * ct);
+  float st2 = sqrt(max(0.0, 1.0 - ct2 * ct2));
+  float pl = length(d.xy);
+  vec2 pd = pl > 1e-6 ? d.xy / pl : vec2(1.0, 0.0);
+  return vec3(pd * st2, -ct2);
+}
+// barwa ciała doskonale czarnego o temperaturze T [K] (przybliżenie T. Hellanda)
+vec3 srBlackbody(float T) {
+  float t = clamp(T, 1000.0, 40000.0) / 100.0;
+  vec3 c;
+  c.r = t <= 66.0 ? 1.0 : clamp(1.292936 * pow(t - 60.0, -0.1332047592), 0.0, 1.0);
+  c.g = t <= 66.0 ? clamp(0.3900816 * log(t) - 0.6318414, 0.0, 1.0) : clamp(1.1298909 * pow(t - 60.0, -0.0755148492), 0.0, 1.0);
+  c.b = t >= 66.0 ? 1.0 : (t <= 19.0 ? 0.0 : clamp(0.5432068 * log(t - 10.0) - 1.1962541, 0.0, 1.0));
+  return c * smoothstep(700.0, 2600.0, T);            // bardzo "zimne" = podczerwień, prawie niewidoczne
+}
+// barwa światła o długości fali wl [nm]; poza 380–750 nm: niewidzialne
+vec3 srWavelength(float wl) {
+  vec3 c = vec3(0.0);
+  if (wl >= 380.0 && wl < 440.0) c = vec3(-(wl - 440.0) / 60.0, 0.0, 1.0);
+  else if (wl < 490.0 && wl >= 440.0) c = vec3(0.0, (wl - 440.0) / 50.0, 1.0);
+  else if (wl < 510.0 && wl >= 490.0) c = vec3(0.0, 1.0, -(wl - 510.0) / 20.0);
+  else if (wl < 580.0 && wl >= 510.0) c = vec3((wl - 510.0) / 70.0, 1.0, 0.0);
+  else if (wl < 645.0 && wl >= 580.0) c = vec3(1.0, -(wl - 645.0) / 65.0, 0.0);
+  else if (wl <= 750.0 && wl >= 645.0) c = vec3(1.0, 0.0, 0.0);
+  float f = wl < 420.0 ? 0.3 + 0.7 * (wl - 380.0) / 40.0 : wl > 700.0 ? 0.3 + 0.7 * (750.0 - wl) / 50.0 : 1.0;
+  return c * clamp(f, 0.0, 1.0);
+}`;
+const srShip = { group: new THREE.Group(), uniforms: { uBeta: { value: 0 }, uShift: { value: 0 } }, z: 0 };
+mode9Group.add(srShip.group);
+srShip.group.visible = false;
+{
+  const U = srShip.uniforms;
+  const head = `#include <common>
+#include <logdepthbuf_pars_vertex>
+${SR_SHIP_GLSL}
+uniform float uShift;
+varying vec3 vCol;`;
+  const frag = `#include <common>
+#include <logdepthbuf_pars_fragment>
+varying vec3 vCol;
+uniform float uRound;
+void main() {
+  #include <logdepthbuf_fragment>
+  float a = 1.0;
+  if (uRound > 0.5) { vec2 q = gl_PointCoord - 0.5; a = smoothstep(0.5, 0.15, length(q)); }
+  gl_FragColor = vec4(vCol * a, 1.0);
+}`;
+  const mat = (vert, round) => new THREE.ShaderMaterial({
+    uniforms: { ...U, uRound: { value: round ? 1 : 0 } }, vertexShader: head + vert, fragmentShader: frag,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  // gwiazdy (kierunki + temperatura + jasność)
+  const rnd = seededRandom('srstars'), N = 7000;
+  const pos = new Float32Array(N * 3), temp = new Float32Array(N), mag = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    const u = rnd() * 2 - 1, th = rnd() * Math.PI * 2, r = Math.sqrt(1 - u * u);
+    pos[i * 3] = r * Math.cos(th); pos[i * 3 + 1] = u; pos[i * 3 + 2] = r * Math.sin(th);
+    const k = rnd();
+    temp[i] = k < 0.55 ? 3200 + rnd() * 1800 : k < 0.85 ? 5000 + rnd() * 2500 : 7500 + rnd() * 17000;
+    mag[i] = Math.pow(rnd(), 3) * 0.9 + 0.12;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('temp', new THREE.BufferAttribute(temp, 1));
+  g.setAttribute('mag', new THREE.BufferAttribute(mag, 1));
+  const stars = new THREE.Points(g, mat(`
+attribute float temp;
+attribute float mag;
+void main() {
+  float D;
+  vec3 a = srAberrate(normalize(position), D);
+  vCol = srBlackbody(temp * D) * mag * 0.55 * clamp(pow(D, 1.6), 0.03, 2.2);   // jaśniej z przodu, ale bez przepalenia barwy
+  vec4 mv = modelViewMatrix * vec4(a * 900.0, 1.0);
+  gl_Position = projectionMatrix * mv;
+  gl_PointSize = 2.0 + 2.5 * mag * clamp(D, 0.5, 2.5);
+  #include <logdepthbuf_vertex>
+}`, true));
+  stars.frustumCulled = false;
+  srShip.group.add(stars);
+  // bramki (białe ramki 6×6 m co 40 m na trasie) i kolorowe lampki (jedna długość fali: 460, 530, 650 nm)
+  const gp = [], lp = [], lw = [];
+  const S = 3, SEG = 24, GAP = 40, COUNT = 11;
+  for (let k = 0; k < COUNT; k++) {
+    const z = -k * GAP;
+    const corners = [[-S, -S], [S, -S], [S, S], [-S, S]];
+    for (let e = 0; e < 4; e++) {
+      const [x0, y0] = corners[e], [x1, y1] = corners[(e + 1) % 4];
+      for (let i = 0; i < SEG; i++) {
+        const a = i / SEG, b = (i + 1) / SEG;
+        gp.push(x0 + (x1 - x0) * a, y0 + (y1 - y0) * a, z, x0 + (x1 - x0) * b, y0 + (y1 - y0) * b, z);
+      }
+      lp.push(x0, y0, z);
+      lw.push([460, 530, 650, 580][(e + k) % 4]);
+    }
+  }
+  const gg = new THREE.BufferGeometry();
+  gg.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3));
+  const wrap = `
+  vec3 p = position;
+  p.z = mod(p.z + uShift + ${(COUNT - 1) * GAP + 20}.0, ${COUNT * GAP}.0) - ${(COUNT - 1) * GAP + 20}.0;
+  float dist = length(p);
+  float D;
+  vec3 a = srAberrate(p / dist, D);`;
+  const gates = new THREE.LineSegments(gg, mat(`
+void main() {${wrap}
+  vCol = srBlackbody(6500.0 * D) * clamp(pow(D, 1.6), 0.03, 2.0) * 0.6 * smoothstep(${COUNT * GAP}.0, ${COUNT * GAP * 0.6}.0, dist);
+  vec4 mv = modelViewMatrix * vec4(a * dist, 1.0);
+  gl_Position = projectionMatrix * mv;
+  #include <logdepthbuf_vertex>
+}`, false));
+  gates.frustumCulled = false;
+  const lg = new THREE.BufferGeometry();
+  lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+  lg.setAttribute('wl', new THREE.Float32BufferAttribute(lw, 1));
+  const lamps = new THREE.Points(lg, mat(`
+attribute float wl;
+void main() {${wrap}
+  vCol = srWavelength(wl / D) * clamp(pow(D, 1.6), 0.05, 2.2) * smoothstep(${COUNT * GAP}.0, ${COUNT * GAP * 0.6}.0, dist);
+  vec4 mv = modelViewMatrix * vec4(a * dist, 1.0);
+  gl_Position = projectionMatrix * mv;
+  gl_PointSize = clamp(900.0 / dist, 4.0, 40.0);
+  #include <logdepthbuf_vertex>
+}`, true));
+  lamps.frustumCulled = false;
+  srShip.group.add(gates, lamps);
+  srShip.board = makeTextBoard(1400, 3);
+  srShip.group.add(srShip.board.sprite);
+}
+state.srShip = false;
+function toggleSrShip() {
+  state.srShip = !state.srShip;
+  srShip.group.visible = state.srShip;
+  for (const o of [sr.moving, sr.resting, sr.board.sprite, sr.restBoard.sprite, sr.ruler, sr.phMove.sprite, sr.phMove.trail, sr.phRest.sprite, sr.phRest.trail]) o.visible = !state.srShip;
+  stars.visible = !state.srShip;
+  if (state.srShip) {
+    srShip.group.position.copy(eyePos);
+    srShip.group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), horizontalForward());
+  }
+  drawMenu();
+}
+function updateSrShip(dt) {
+  const b = state.srBeta;
+  srShip.uniforms.uBeta.value = b;
+  if (!state.srPaused) srShip.uniforms.uShift.value += b * 30 * dt;      // w tym widoku "c" = 30 m/s
+  srShip.group.position.copy(eyePos);
+  const fmt = v => String(v).replace('.', ',');
+  const D = Math.sqrt((1 + b) / (1 - b));
+  srShip.board.setText([
+    `Widok z pokładu: ${fmt(b)} c`,
+    b < 0.05 ? 'Statek stoi – gwiazdy wyglądają zwyczajnie' : `Przed Tobą gwiazdy skupiają się i niebieszczeją (×${D.toFixed(1).replace('.', ',')}), za Tobą czerwienieją`,
+    'Lampki: niebieska 460, zielona 530, żółta 580, czerwona 650 nm',
+  ], ['#ffe9a8', '#ffffff', '#9fd0ff']);
+  const p = _sr1.copy(srShip.group.position).addScaledVector(horizontalForward(), 1.4).addScaledVector(UP, -0.55);
+  srShip.board.sprite.position.copy(p).sub(srShip.group.position).applyQuaternion(srShip.group.quaternion.clone().invert());
+  const h = 1.45 * Math.tan(3.2 * DEG);
+  srShip.board.sprite.scale.set(h * srShip.board.sprite.userData.aspect, h, 1);
+}
+
 // =====================================================================
 //  MENU (panel z przyciskami, rysowany na canvas) – przesuwane i chowane
 // =====================================================================
@@ -6031,23 +6766,24 @@ const MENU_CANVAS_W = 1024, MENU_CANVAS_H = 730;
 // wysokość narysowanej części panelu (tryby z dodatkowymi rzędami przycisków mają wyższy panel)
 const menuUsedH = () => ({ 3: 716, 2: 588, 8: 588, 9: 588 }[state.mode] || 460);
 const MENU_HEIGHT_M = MENU_WIDTH_M * MENU_CANVAS_H / MENU_CANVAS_W;
-const MODE_NAMES = { 1: 'Model', 2: 'Planety', 3: 'Ludziki', 4: 'Obiekty', 5: 'Kosmos', 6: 'Skala', 7: 'Galaktyka', 8: 'Grawitacja', 9: 'Światło' };
+const MODE_NAMES = { 1: 'Model', 2: 'Planety', 3: 'Ludziki', 4: 'Obiekty', 5: 'Kosmos', 6: 'Skala', 7: 'Galaktyka', 8: 'Grawitacja', 9: 'Światło', 10: 'Podróż' };
 const menuButtons = [
   { id: 'hide', label: 'Schowaj ✕', x: 760, y: 18, w: 246, h: 70, small: true },
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map(m => ({ id: 'mode' + m, label: 'Tryb ' + m, sub: MODE_NAMES[m], x: 18 + (m - 1) * 110, y: 196, w: 104, h: 120, small: true, font: 'bold 27px system-ui, sans-serif', subFont: '19px system-ui, sans-serif' })),
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(m => ({ id: 'mode' + m, label: 'Tryb ' + m, sub: MODE_NAMES[m], x: 18 + (m - 1) * 99, y: 196, w: 94, h: 120, small: true, font: 'bold 24px system-ui, sans-serif', subFont: '17px system-ui, sans-serif' })),
   // Tryb 3: temperatura i scenariusze
   ...M3_TEMPS.map((T, i) => ({ id: 'temp' + T, label: T === -30 ? 'Lód −30°C' : T + '°C', x: 18 + i * 199, y: 456, w: 191, h: 116, modes: [3], small: true, font: 'bold 32px system-ui, sans-serif', active: () => m3W.T === T })),
-  ...M3_EVENTS.map((e, i) => ({ id: 'ev_' + e, label: { quake: 'Płyty i trzęsienie', volcano: 'Erupcja wulkanu', tornado: 'Tornado', tsunami: 'Tsunami', meteor: 'Meteoryt' }[e],
-    x: 18 + i * 199, y: 588, w: 191, h: 116, modes: [3], small: true, font: 'bold 25px system-ui, sans-serif', active: () => !!(m3W.event && m3W.event.type === e) })),
+  ...M3_EVENTS.map((e, i) => ({ id: 'ev_' + e, label: { quake: 'Płyty', volcano: 'Wulkan', tornado: 'Tornado', tsunami: 'Tsunami', meteor: 'Meteoryt', rocket: 'Rakieta', greenhouse: 'Cieplarnia' }[e],
+    x: 18 + i * 141, y: 588, w: 135, h: 116, modes: [3], small: true, font: 'bold 26px system-ui, sans-serif', active: () => !!(m3W.event && m3W.event.type === e) })),
   { id: 'mwAll', label: '◀ Cała Galaktyka', x: 18, y: 332, w: 262, h: 112, modes: [7], small: true },
   { id: 'mwSun', label: 'Do Ziemi ▶', x: 744, y: 332, w: 262, h: 112, modes: [7], small: true },
   { id: 'reset', label: 'Reset', x: 18, y: 332, w: 300, h: 112, modes: [2, 3, 4, 5, 8] },
   { id: 'stSheet', label: () => (state.stSheet ? 'Pokaż siatkę 3D' : 'Pokaż płachtę 2D'), x: 330, y: 332, w: 676, h: 112, modes: [8] },
   { id: 'stInside', label: () => (state.stInside ? 'Siatka przed Tobą' : 'Wejdź do środka'), x: 18, y: 456, w: 320, h: 116, modes: [8], small: true },
   { id: 'stProbes', label: () => (state.stProbes ? 'Schowaj sondy' : 'Sondy-bliźniaki'), x: 350, y: 456, w: 320, h: 116, modes: [8], small: true },
-  ...SR_SPEEDS.map((b, i) => ({ id: 'sr' + b, label: String(b).replace('.', ',') + ' c', x: 18 + i * 199, y: 332, w: 191, h: 112, modes: [9], small: true, active: () => state.srBeta === b })),
-  { id: 'srReset', label: 'Wyzeruj zegary', x: 18, y: 456, w: 490, h: 116, modes: [9], small: true },
-  { id: 'srPause', label: () => (state.srPaused ? '▶ Start' : '❚❚ Pauza'), x: 518, y: 456, w: 488, h: 116, modes: [9], small: true },
+  ...SR_SPEEDS.map((b, i) => ({ id: 'sr' + b, label: String(b).replace('.', ',') + ' c', x: 18 + i * 166, y: 332, w: 160, h: 112, modes: [9], small: true, active: () => state.srBeta === b })),
+  { id: 'srReset', label: 'Wyzeruj zegary', x: 18, y: 456, w: 320, h: 116, modes: [9], small: true },
+  { id: 'srPause', label: () => (state.srPaused ? '▶ Start' : '❚❚ Pauza'), x: 350, y: 456, w: 320, h: 116, modes: [9], small: true },
+  { id: 'srShip', label: () => (state.srShip ? 'Widok z boku' : 'Widok z pokładu'), x: 682, y: 456, w: 324, h: 116, modes: [9], small: true },
   { id: 'stAge', label: 'Wyzeruj wiek sond', x: 682, y: 456, w: 324, h: 116, modes: [8], small: true },
   { id: 'pick', label: () => (state.follow ? 'Puść ludzika (B)' : state.m3Pick ? 'Wyceluj w ludzika, naciśnij spust…' : 'Kamera za ludzikiem (B)'),
     x: 330, y: 332, w: 676, h: 112, modes: [3] },
@@ -6057,7 +6793,9 @@ const menuButtons = [
   { id: 'timePlay', label: () => (state.timePaused ? '▶ Start' : '❚❚ Pauza'), x: 656, y: 332, w: 172, h: 112, modes: [1], small: true },
   { id: 'timeFast', label: 'Szybciej ▶▶', x: 840, y: 332, w: 166, h: 112, modes: [1], small: true },
   { id: 'prev', label: '◀ Mniejszy (B)', x: 18, y: 332, w: 262, h: 112, modes: [6], small: true },
-  { id: 'speed', slider: true, x: 292, y: 332, w: 440, h: 112, modes: [6, 7] },
+  { id: 'speed', slider: true, x: 292, y: 332, w: 440, h: 112, modes: [6, 7, 10] },
+  { id: 'jAll', label: '◀ Cały kosmos', x: 18, y: 332, w: 262, h: 112, modes: [10], small: true },
+  { id: 'jHuman', label: 'Człowiek ▶', x: 744, y: 332, w: 262, h: 112, modes: [10], small: true },
   { id: 'next', label: 'Większy (A) ▶', x: 744, y: 332, w: 262, h: 112, modes: [6], small: true },
   { id: 'knife', label: () => state.knife ? 'Nóż: WŁ (A)' : 'Nóż: wył (A)', x: 330, y: 332, w: 340, h: 112, modes: [2, 4] },
   { id: 'surf', label: () => (state.surf ? 'Wróć z powierzchni (X)' : state.surfPick ? 'Wyceluj w planetę i naciśnij spust…' : 'Stań na powierzchni planety (X)'),
@@ -6073,7 +6811,8 @@ const MENU_HINTS = {
   6: 'Gałka: zoom · A/B: skok · spust na obiekcie: obracaj się wokół niego (gałka lewo/prawo)',
   7: 'Gałka/2 ręce: Galaktyka → Słońce → Ziemia · suwak: prędkość lotu',
   8: 'Spust: chwyć obiekt i włóż w siatkę · gałka: obróć siatkę · sondy: porównaj upływ czasu',
-  9: 'Wybierz prędkość: statek się skraca, a jego zegar świetlny tyka wolniej (światło zwolnione do 2 m/s)',
+  10: 'Gałka/2 ręce: od człowieka do całego kosmosu i z powrotem · suwak: prędkość',
+  9: 'Prędkość: statek się skraca, jego zegar tyka wolniej · „Widok z pokładu”: tak widzi kosmos załoga',
 };
 const [menuCanvas, menuCtx] = makeCanvas(MENU_CANVAS_W, MENU_CANVAS_H);
 const menuTexture = canvasTexture(menuCanvas);
@@ -6136,7 +6875,7 @@ function drawMenu() {
       const f = Math.log(sl.v / sl.min) / Math.log(sl.max / sl.min);
       const x0 = b.x + 30, x1 = b.x + b.w - 30, yT = b.y + 80;
       ctx.font = 'bold 30px system-ui, sans-serif';
-      ctx.fillText(`${state.mode === 7 ? 'Prędkość lotu' : 'Prędkość zoomu'}: ×10 w ${(1 / sl.v).toLocaleString('pl-PL', { maximumFractionDigits: 1 })} s`, b.x + b.w / 2, b.y + 34);
+      ctx.fillText(`${state.mode === 7 || state.mode === 10 ? 'Prędkość lotu' : 'Prędkość zoomu'}: ×10 w ${(1 / sl.v).toLocaleString('pl-PL', { maximumFractionDigits: 1 })} s`, b.x + b.w / 2, b.y + 34);
       ctx.fillStyle = '#1a2340'; roundRect(ctx, x0, yT - 7, x1 - x0, 14, 7); ctx.fill();
       ctx.fillStyle = '#7fb0ff'; roundRect(ctx, x0, yT - 7, (x1 - x0) * f, 14, 7); ctx.fill();
       ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(x0 + (x1 - x0) * f, yT, 18, 0, Math.PI * 2); ctx.fill();
@@ -6183,9 +6922,13 @@ function onMenuButton(button) {
     case 'mode9': setMode(9); break;
     case 'srReset': srResetClocks(); break;
     case 'srPause': state.srPaused = !state.srPaused; break;
+    case 'srShip': toggleSrShip(); break;
     case 'surf': if (state.surf) exitSurface(); else { state.surfPick = !state.surfPick; } break;
     case 'mwAll': mwGoTo(Math.log10(MW_START_SIZE_M / 100000)); break;
     case 'mwSun': mwGoTo(MW_LOG_MAX); break;
+    case 'jAll': mwGoTo(J_LOG_MIN); break;
+    case 'jHuman': mwGoTo(J_LOG_MAX); break;
+    case 'mode10': setMode(10); break;
     case 'prev': scaleJump(-1); break;
     case 'timeSlow': state.timeIndex = Math.max(0, state.timeIndex - 1); state.timePaused = false; break;
     case 'timeFast': state.timeIndex = Math.min(TIME_SPEEDS.length - 1, state.timeIndex + 1); state.timePaused = false; break;
@@ -6212,6 +6955,7 @@ function setMenuHidden(hidden) {
 function setMode(mode) {
   if (state.follow && mode !== 3) { state.follow = null; state.m3Pick = false; layoutMode3(); }
   if (state.surf && mode !== 2) exitSurface();
+  if (state.srShip && mode !== 9) toggleSrShip();
   state.surfPick = false;
   state.mode = mode;
   cancelAllGrabs();
@@ -6224,10 +6968,12 @@ function setMode(mode) {
   shelf4.group.visible = mode === 4;
   mode5Group.visible = mode === 5;
   mode6Group.visible = mode === 6;
-  mode7Group.visible = mode === 7;
+  mode7Group.visible = mode === 7 || mode === 10;
   mode8Group.visible = mode === 8;
   mode9Group.visible = mode === 9;
-  stars.visible = mode !== 5 && mode !== 7;                        // w przestrzeni międzygalaktycznej nie ma pobliskich gwiazd
+  stars.visible = mode !== 5 && mode !== 7 && mode !== 10;
+  if (mode === 7 && state.journey) { state.journey = false; layoutMode7(); }
+  if (mode === 10 && !state.journey) { layoutMode10(); }                        // w przestrzeni międzygalaktycznej nie ma pobliskich gwiazd
   if (!state.placed[mode]) { layoutMode(mode); state.placed[mode] = true; }
   else if (!renderer.xr.isPresenting) focusOrbitOnMode(mode);
   drawMenu();
@@ -6243,6 +6989,7 @@ function layoutMode(mode) {
   if (mode === 7) layoutMode7();
   if (mode === 8) layoutMode8();
   if (mode === 9) layoutMode9();
+  if (mode === 10) layoutMode10();
 }
 
 // Suwak: pozycja trafienia na pasku -> prędkość
@@ -6257,7 +7004,7 @@ function focusOrbitOnMode(mode) {
   if (mode === 1) orbitControls.target.copy(systemGroup.position);
   if (mode === 3) orbitControls.target.copy(m3Planet.position);
   if (mode === 6) orbitControls.target.copy(m6Origin).addScaledVector(m6Fwd, SCALE_DISTANCE_M + 0.3).setY(SCALE_BASELINE_Y_M + 0.3);
-  if (mode === 7) orbitControls.target.copy(mwPivot);
+  if (mode === 7 || mode === 10) orbitControls.target.copy(mwPivot);
   if (mode === 8) orbitControls.target.copy(stRoot.position);
   if (mode === 9) orbitControls.target.copy(sr.origin);
   const shelf = shelfFor(mode);
@@ -6439,7 +7186,7 @@ function onPressStart(ctrl, source) {
     if (state.follow) return;                    // podczas śledzenia planety nie chwytamy
     grabbed = grabMode3(ctrl);
   }
-  else if (mode === 5 || mode === 7) { state.m5Hands.add(ctrl); state.m5Pinch = null; return; }
+  else if (mode === 5 || mode === 7 || mode === 10) { state.m5Hands.add(ctrl); state.m5Pinch = null; return; }
   else if (mode === 6) { if (source === 'select') scaleFocusClick(raycaster.ray.origin.clone(), raycaster.ray.direction.clone()); return; }
   else if (mode === 8) {
     const o = pickST(raycaster.ray.origin.clone(), raycaster.ray.direction.clone());
@@ -6617,7 +7364,8 @@ window.addEventListener('keydown', e => {
   if (key === 'm') setMenuHidden(!state.menuHidden);
   if (state.mode === 3 && key === 'l') togglePersonPick();
   if (state.mode === 8 && key === 's') toggleSheet();
-  if (state.mode === 9 && '12345'.includes(e.key) && e.key !== '') setSrSpeed(SR_SPEEDS[+e.key - 1]);
+  if (state.mode === 9 && '123456'.includes(e.key) && e.key !== '') setSrSpeed(SR_SPEEDS[+e.key - 1]);
+  if (state.mode === 9 && key === 'w') toggleSrShip();
   if (state.mode === 9 && e.key === ' ') { state.srPaused = !state.srPaused; drawMenu(); }
   if (state.mode === 9 && key === 'r') srResetClocks();
   if (state.mode === 8 && key === 'i') toggleInside();
@@ -6627,7 +7375,7 @@ window.addEventListener('keydown', e => {
   if (state.mode === 8 && e.key === 'ArrowRight') stRoot.quaternion.premultiply(_q2.setFromAxisAngle(UP, -0.2));
   if (state.mode === 2 && key === 'v') { setRayFromMouse(); surfaceAction(raycaster.ray.origin.clone(), raycaster.ray.direction.clone()); }
   if (state.mode === 3 && !state.follow && (e.key === '+' || e.key === '=')) setM3Zoom(m3Planet.scale.x * 1.5);
-  if (state.mode === 3 && '12345'.includes(e.key) && e.key !== '') m3StartEvent(['quake', 'volcano', 'tornado', 'tsunami', 'meteor'][+e.key - 1]);
+  if (state.mode === 3 && '1234567'.includes(e.key) && e.key !== '') m3StartEvent(M3_EVENTS[+e.key - 1]);
   if (state.mode === 3 && key === 't') setM3Temperature(M3_TEMPS[(M3_TEMPS.indexOf(m3W.T) + 1) % M3_TEMPS.length]);
   if (state.mode === 3 && !state.follow && e.key === '-') setM3Zoom(m3Planet.scale.x / 1.5);
   if (state.mode === 3 && e.key === 'ArrowLeft') rotateM3Planet(_q2.setFromAxisAngle(UP, -0.2));
@@ -6641,10 +7389,10 @@ window.addEventListener('keydown', e => {
   if (state.mode === 1 && e.key === 'ArrowDown') pitchSystem(-0.2);
   if (state.mode === 1 && e.key === '.') { state.timeIndex = Math.min(TIME_SPEEDS.length - 1, state.timeIndex + 1); state.timePaused = false; }
   if (state.mode === 1 && e.key === ',') { state.timeIndex = Math.max(0, state.timeIndex - 1); state.timePaused = false; }
-  if (state.mode === 7 && (e.key === '+' || e.key === '=')) mwZoom(0.5);
-  if (state.mode === 7 && e.key === '-') mwZoom(-0.5);
-  if (state.mode === 7 && key === ']') nudgeSpeed(1.5);
-  if (state.mode === 7 && key === '[') nudgeSpeed(1 / 1.5);
+  if ((state.mode === 7 || state.mode === 10) && (e.key === '+' || e.key === '=')) mwZoom(0.5);
+  if ((state.mode === 7 || state.mode === 10) && e.key === '-') mwZoom(-0.5);
+  if ((state.mode === 7 || state.mode === 10) && key === ']') nudgeSpeed(1.5);
+  if ((state.mode === 7 || state.mode === 10) && key === '[') nudgeSpeed(1 / 1.5);
   if (state.mode === 7 && e.key === 'ArrowLeft') state.mwYaw += 0.15;
   if (state.mode === 7 && e.key === 'ArrowRight') state.mwYaw -= 0.15;
   if (state.mode === 5 && (e.key === '+' || e.key === '=')) zoomUniverse(2);
@@ -6748,9 +7496,13 @@ function updateStatus(time) {
   } else if (mode === 6) {
     text = state.m6Focus ? `Obracasz się wokół: ${state.m6Focus.def.name} (gałka ◀ ▶, spust = puść)  ·  ${state.fps} FPS`
       : `1 m w goglach = ${formatMeters(Math.pow(10, state.scaleLog))}  ·  ${nearestScaleItem().def.name}  ·  ${state.fps} FPS`;
+  } else if (mode === 10) {
+    const L = state.mwLog;
+    text = `1 m w goglach = ${formatMeters(M_PER_LY / Math.pow(10, L))}  ·  ${journeyFocusText(L)}  ·  ${state.fps} FPS`;
   } else if (mode === 9) {
     const g = srGamma();
-    text = state.srBeta >= 0.999 ? `γ = ${g.toFixed(1)} – prędkości światła nie da się osiągnąć: im bliżej, tym więcej energii trzeba  ·  ${state.fps} FPS`
+    text = state.srShip ? `Widok z pokładu  ·  ${String(state.srBeta).replace('.', ',')} c  ·  aberracja światła i efekt Dopplera  ·  ${state.fps} FPS`
+      : state.srBeta >= 0.999 ? `γ = ${g.toFixed(1)} – prędkości światła nie da się osiągnąć: im bliżej, tym więcej energii trzeba  ·  ${state.fps} FPS`
       : `Prędkość ${String(state.srBeta).replace('.', ',')} c  ·  statek ${g.toFixed(2)}× krótszy, jego czas ${g.toFixed(2)}× wolniej  ·  ${state.fps} FPS`;
   } else if (mode === 8) {
     const n = stObjects.filter(o => o.weight > 0.5).length;
@@ -6820,7 +7572,7 @@ renderer.setAnimationLoop((time, frame) => {
     if (state.mode === 1 && presenting) stickZoom(ctrl, dt);
     if (state.mode === 6 && presenting) stickScale(ctrl, dt);
     if (state.mode === 5 && presenting) stickUniverse(ctrl, dt);
-    if (state.mode === 7 && presenting) stickGalaxy(ctrl, dt);
+    if ((state.mode === 7 || state.mode === 10) && presenting) stickGalaxy(ctrl, dt);
     if (state.mode === 3 && presenting) stickFollow(ctrl, dt);
     if (state.mode === 8 && presenting) stickST(ctrl, dt);
     const knifeHand = isKnifeHand(ctrl);
@@ -6904,7 +7656,7 @@ renderer.setAnimationLoop((time, frame) => {
   } else if (state.mode === 8) {
     updateMode8(dt);
     updateHeadlight(mode8Light);
-  } else if (state.mode === 7) {
+  } else if (state.mode === 7 || state.mode === 10) {
     updateMode5Pinch(() => Math.pow(10, state.mwLog), mwSetScale, 4);   // mocniej – zakres to 11 rzędów wielkości
     updateMode7(dt);
   }
@@ -6924,6 +7676,6 @@ window.solar = {
   shelf2, shelf4, m3Planet, people, universe, galaxies, cosmos, menuMesh, menuTab, floaters, controllers,
   setMode, startFocus, cutItem, glueAll, startGrab, endGrab, updateGrabs, grabs, zoomSystemAround,
   setKnife, updateKnife, tryKnifeCut, grabShelf, setMenuHidden, onPressStart, onPressEnd, startBehavior, startFollow, stopFollow, m3Extras, m3Features, setM3Zoom, rotateM3Planet, m3CosmosParts,
-  m3W, m3StartEvent, m3EndEvent, setM3Temperature,
-  models, scaleItems, scaleJump, scaleZoom, m3Surface, layoutMode, mwGoTo, mwZoom, mw, stObjects, stRoot, toggleSheet, mwPath, stProbes, toggleProbes, toggleInside, sr, setSrSpeed, enterSurface, exitSurface, scaleFocusClick, turnAroundFocus, pitchSystem,
+  m3W, m3StartEvent, m3EndEvent, setM3Temperature, m3Atmo,
+  models, scaleItems, scaleJump, scaleZoom, m3Surface, layoutMode, mwGoTo, mwZoom, mw, stObjects, stRoot, toggleSheet, mwPath, stProbes, toggleProbes, toggleInside, sr, setSrSpeed, toggleSrShip, srShip, journey, layoutMode10, surfaceAction, enterSurface, exitSurface, scaleFocusClick, turnAroundFocus, pitchSystem,
 };

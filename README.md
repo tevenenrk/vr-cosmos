@@ -3,7 +3,7 @@
 Interaktywny Układ Słoneczny w goglach VR, działający w przeglądarce **Meta Quest Browser**.
 Nie trzeba nic instalować w goglach: wystarczy otworzyć stronę i kliknąć **ENTER VR**.
 
-Dziewięć trybów (przełączane na panelu menu):
+Dziesięć trybów (przełączane na panelu menu):
 
 - **Tryb 1 – Model:** cały układ do orbity Plutona w prawdziwej skali, z księżycami i pierścieniami.
   Planety krążą po eliptycznych orbitach (prawa Keplera) i obracają się wokół osi, księżyce krążą wokół planet.
@@ -14,16 +14,20 @@ Dziewięć trybów (przełączane na panelu menu):
   (1 cm = 1274 km, więc Słońce ma ok. 11 m średnicy). Wszystkie leżą jako **miniatury w galerii** (dwie półki
   przed Tobą); wyciągnięte z galerii rosną do prawdziwej wielkości (także Słońce), odłożone z powrotem maleją.
   Wyciągnięte można chwytać, rzucać, skalować i **przecinać nożem** (warstwy wnętrza zgodne z wiedzą naukową).
-  **Stań na powierzchni:** wskaż planetę i naciśnij **X** – stoisz na płaskim gruncie tej planety, a inne
-  wyciągnięte ciała widzisz na niebie dokładnie tak, jak z jej powierzchni (kierunek i wielkość kątowa).
+  **Stań na powierzchni:** wskaż planetę i naciśnij **X** – stoisz dokładnie w punkcie, w który celowałeś,
+  a inne wyciągnięte ciała widzisz na niebie tak, jak je ustawiłeś (kierunek i wielkość kątowa z tego miejsca).
 - **Tryb 3 – Ludziki:** planeta generowana w kodzie (średnica 1 m): kontynenty, góry, plaże, śnieżne szczyty
   i czapy polarne, ocean, 450 drzewek i chmurki. Chodzi po niej 30 ludzików z modelu 3D (1 cm wzrostu):
   chodzą, biegają, rozglądają się, machają w Twoją stronę, kucają, podchodzą do siebie i rozmawiają w parach
   i grupkach. Planetę chwytasz jak przedmiot (z daleka przylatuje do ręki). Planeta krąży po orbicie wokół Słońca,
   a Ty lecisz razem z nią: daleko w tle (kilkaset metrów) przesuwają się Słońce, inne planety i linie ich orbit.
   Jest dzień i noc. **Temperatura:** −30°C (epoka lodowa), 15°C, 40°C, 80°C (oceany parują, ludzie chowają się
-  w domach), 300°C (jak Wenus). **Scenariusze:** zderzenie płyt tektonicznych (rosną góry) i trzęsienie ziemi,
-  erupcja wulkanu (lawa spływa i stygnie), tornado, tsunami, uderzenie meteorytu (krater, fala uderzeniowa).
+  w domach), 300°C (jak Wenus); chmury i atmosfera (poświata wokół planety) zmieniają się razem z temperaturą.
+  **Scenariusze:** zderzenie płyt tektonicznych (rosną góry) i trzęsienie ziemi, erupcja wulkanu (lawa spływa
+  i stygnie), tornado, tsunami, meteoryt (najpierw kilka sekund ostrzeżenia: tor lotu i miejsce uderzenia),
+  start rakiety (znacznik, odliczanie, orbita, ucieczka w kosmos), efekt cieplarniany (CO₂ zatrzymuje ciepło).
+  Ludziki reagują: patrzą na zdarzenie, chowają się w domach, uciekają pod górę przed tsunami, przychodzą
+  popatrzeć na start rakiety i machają.
   Ludziki idą po rzeźbie terenu (góry, doliny) i omijają morza. Na planecie są 3 wioski z domkami (większość
   ludzików w nich mieszka i do nich wraca), wulkan z lawą w kraterze i dymem, chmura burzowa z deszczem
   i błyskawicami, a wokół krąży księżyc i sztuczny satelita (na sztywno związane z planetą).
@@ -58,8 +62,14 @@ Dziewięć trybów (przełączane na panelu menu):
 - **Tryb 9 – Światło (prędkość światła):** statek przelatuje wzdłuż miarki z prędkością 0,1–0,999 prędkości
   światła (światło jest tu „zwolnione” do 2 m/s, żeby było widać, jak leci). Statek jest krótszy γ razy,
   a jego **zegar świetlny** (błysk odbijający się między lusterkami) tyka γ razy wolniej – z Twojego punktu
-  widzenia błysk leci po skosie, więc dłuższą drogą. Obok stoi ten sam statek w spoczynku do porównania,
-  a tablica pokazuje Twój zegar i zegar statku.
+  widzenia błysk leci po skosie, więc dłuższą drogą. Pod torem stoi ten sam statek w spoczynku do porównania,
+  a tablica pokazuje Twój zegar i zegar statku. **Widok z pokładu:** tak widzi kosmos załoga – aberracja
+  światła (gwiazdy skupiają się przed statkiem, mijane bramki się wyginają) i efekt Dopplera (z przodu barwy
+  przesunięte ku niebieskiemu i jaśniejsze, z tyłu ku czerwieni i ciemniejsze; kolorowe lampki zmieniają
+  kolor albo znikają w podczerwieni/nadfiolecie).
+- **Tryb 10 – Podróż:** jedna ciągła skala od człowieka (1 m = 1 m) do całego kosmosu: człowiek i autobus →
+  wieża Eiffla → Mount Everest na zakrzywionej Ziemi → cała Ziemia (Everest to na niej ułamek milimetra) →
+  Księżyc → Układ Słoneczny → najbliższe gwiazdy → Droga Mleczna → Grupa Lokalna (Andromeda) → sieć kosmiczna.
 
 Ziemia we wszystkich trybach to model 3D z teksturą (`models/earth.glb`).
 
@@ -114,7 +124,7 @@ Skala: od ok. **15 cm** (cały układ w dłoni) do **5 mln ×** (wtedy Ziemia ma
 | Złap planetę | spust/grip; z daleka (promieniem) przylatuje do ręki; obracaj dłonią |
 | Powiększ / zmniejsz | **gałka** góra/dół albo obie ręce; gałka lewo/prawo obraca planetę |
 | **Temperatura** | przyciski −30°C / 15°C / 40°C / 80°C / 300°C w menu |
-| **Scenariusze** | przyciski: Płyty i trzęsienie, Erupcja wulkanu, Tornado, Tsunami, Meteoryt (każdy ok. 20 s; zmiany rzeźby zostają do „Reset”) |
+| **Scenariusze** | przyciski: Płyty, Wulkan, Tornado, Tsunami, Meteoryt, Rakieta, Cieplarnia (każdy ok. 20–28 s; zmiany rzeźby zostają do „Reset”; na PC: **1–7**) |
 | **Kamera za ludzikiem** | **B** (albo przycisk w menu), potem wyceluj promieniem w ludzika i naciśnij **spust** |
 | W trybie kamery | **gałka** góra/dół = zoom (4× – 80×), lewo/prawo = obejście ludzika dookoła; **B** = puść ludzika |
 
@@ -162,6 +172,14 @@ Napis pod obiektami podaje skalę, np. „1 m w goglach = 2,9 m naprawdę”.
 |---|---|
 | Prędkość statku | przyciski 0,1 c / 0,5 c / 0,87 c (γ = 2) / 0,99 c / 0,999 c (na PC: **1–5**) |
 | Zegary | „Wyzeruj zegary”, „Pauza” (na PC: **R**, **spacja**) |
+| **Widok z pokładu** | przycisk w menu (na PC: **W**); prędkość tymi samymi przyciskami (0 c = postój, do porównania) |
+
+### Tryb 10 – Podróż
+
+| Akcja | Jak |
+|---|---|
+| Od człowieka do kosmosu i z powrotem | **gałka** góra/dół, oba spusty i rozsuwanie dłoni, albo przyciski **◀ Cały kosmos** / **Człowiek ▶** |
+| Prędkość | **suwak** w menu |
 
 Na panelu menu widać skalę i **FPS** (cel: 72).
 
@@ -246,6 +264,7 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 | `MODE3_ORBIT_RADIUS_M`, `MODE3_SUN_RADIUS_M`, `MODE3_YEAR_S` | Tryb 3: jak daleko jest Słońce, jak duże, ile trwa rok planety |
 | `ST_*` | Tryb 8: rozmiar i gęstość siatki, jasność linii, wysokość płachty, okres orbity Ziemi, siatka „w środku” (`ST_INSIDE_SCALE`), sondy (`ST_YEARS_PER_S`, `ST_TIME_EFFECT`) |
 | `GALLERY_*`, `SURFACE_*` | Tryb 2: galeria miniatur (odległość, odstępy, rozmiar), widok z powierzchni |
+| `J_SCALE_START_M` | Tryb 10: skala na starcie (1 = człowiek w prawdziwej wielkości) |
 | `SR_*` | Tryb 9: „prędkość światła” w goglach, długość toru i statku, wysokość zegara świetlnego, prędkości do wyboru |
 | `MODEL_FILES`, `PERSON_*` | pliki modeli 3D; nazwa animacji chodu i obrót modelu ludzika |
 | `SCALE_*`, `SCALE_OBJECTS` | Tryb 6: lista obiektów (rozmiar, opis), progi znikania, prędkość zoomu |
