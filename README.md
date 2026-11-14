@@ -17,7 +17,11 @@ Siedem trybów (przełączane na panelu menu):
   i czapy polarne, ocean, 450 drzewek i chmurki. Chodzi po niej 30 ludzików z modelu 3D (1 cm wzrostu):
   chodzą, biegają, rozglądają się, machają w Twoją stronę, kucają, podchodzą do siebie i rozmawiają w parach
   i grupkach. W tle małe Słońce i planetki z kontynentami; Słońce powoli „obiega” planetę, więc jest dzień i noc.
-  Ludziki idą po rzeźbie terenu (góry, doliny) i omijają morza.
+  Ludziki idą po rzeźbie terenu (góry, doliny) i omijają morza. Na planecie są 3 wioski z domkami (większość
+  ludzików w nich mieszka i do nich wraca), wulkan z lawą w kraterze i dymem, chmura burzowa z deszczem
+  i błyskawicami, a wokół krąży księżyc i sztuczny satelita (na sztywno związane z planetą).
+  **Kamera za ludzikiem:** wybierz ludzika, a planeta ustawi się tak, że stoi on przed Tobą (powiększony),
+  a świat kręci się pod jego stopami.
 - **Tryb 4 – Obiekty:** czarna dziura, pulsar, biały karzeł, Ziemia (dla porównania) i kometa. Są w wygodnych rozmiarach, a prawdziwe
   rozmiary podają tabliczki. Pulsar i białego karła można przeciąć.
 - **Tryb 5 – Kosmos:** stoisz w miejscu, zanurzony w setkach miniaturowych galaktyk (700, gęstość
@@ -28,13 +32,13 @@ Siedem trybów (przełączane na panelu menu):
 - **Tryb 6 – Skala:** podróż przez 33 rzędy wielkości, od atomu (0,1 nm) przez DNA, wirusa, bakterię, włos,
   mrówkę, człowieka, autobus, płetwala, wieżę Eiffla, Everest, księżyce, Ziemię, Jowisza, Słońce, Betelgezę,
   Układ Słoneczny, heliosferę, obłok Oorta, najbliższe gwiazdy, Plejady, Bąbel Lokalny i ramię Oriona po Drogę
-  Mleczną i Grupę Lokalną galaktyk (39 obiektów). Gałka lewo/prawo obraca cały łuk obiektów wokół Ciebie,
-  żeby nie trzeba było odwracać głowy.
+  Mleczną i Grupę Lokalną galaktyk (39 obiektów).
 - **Tryb 7 – Galaktyka:** Droga Mleczna ze 140 tys. gwiazd (4 ramiona spiralne, poprzeczka, zgrubienie
   centralne). Zoom (gałka, dwie ręce albo przycisk „Leć do Słońca”) prowadzi płynnie przez 11 rzędów
   wielkości: Galaktyka → sąsiedztwo Słońca (Syriusz, Wega, Betelgeza, Plejady…) → obłok Oorta i orbity planet
   → samo Słońce. Słońce jest ok. 700 miliardów razy mniejsze od Galaktyki. Kolejne różnią się najwyżej ok. 30×, więc zawsze widać trzy
   porównywalne obok siebie na wprost: mniejszy z lewej, bieżący w środku, większy z prawej.
+  **Suwak** w menu reguluje prędkość lotu Słońce ↔ Galaktyka.
 
 Ziemia we wszystkich trybach to model 3D z teksturą (`models/earth.glb`).
 
@@ -87,6 +91,8 @@ Skala: od ok. **15 cm** (cały układ w dłoni) do **5 mln ×** (wtedy Ziemia ma
 | Złap planetę jak przedmiot | spust/grip; z daleka (promieniem) planeta przylatuje do ręki (podejrzyj ludziki z bliska!) |
 | Obracaj, oglądaj ludziki z bliska | trzymając, obracaj dłoń i przybliż planetę do oczu; puść w ruchu – poleci i zwolni |
 | Powiększ / zmniejsz | obie ręce (0,1× – 40×) |
+| **Kamera za ludzikiem** | **B** (albo przycisk w menu), potem wyceluj promieniem w ludzika i naciśnij **spust** |
+| W trybie kamery | **gałka** góra/dół = zoom (4× – 80×), lewo/prawo = obejście ludzika dookoła; **B** = puść ludzika |
 
 ### Tryb 5 – Kosmos
 
@@ -100,7 +106,6 @@ Skala: od ok. **15 cm** (cały układ w dłoni) do **5 mln ×** (wtedy Ziemia ma
 | Akcja | Jak |
 |---|---|
 | Płynny zoom | **prawa gałka** w górę (przybliżanie) / w dół (oddalanie) |
-| **Obróć widok** (łuk obiektów wokół Ciebie) | **gałka w lewo/prawo**; skok A/B ustawia nowy obiekt z powrotem na wprost |
 | Skok do następnego większego / mniejszego obiektu | **A** / **B** (albo przyciski w menu) |
 | Prędkość zoomu i skoków | **suwak** w menu (przeciągnij promieniem) |
 
@@ -112,6 +117,7 @@ Napis pod obiektami podaje skalę, np. „1 m w goglach = 2,9 m naprawdę”.
 |---|---|
 | Zoom do Słońca / z powrotem | **gałka** góra/dół, oba spusty i rozsuwanie dłoni, albo przyciski **Leć do Słońca** / **Cała Galaktyka** |
 | Obrót Galaktyki | **gałka w lewo/prawo** |
+| **Prędkość lotu** | **suwak** w menu (przeciągnij promieniem) |
 
 Na panelu menu widać skalę i **FPS** (cel: 72).
 
@@ -131,7 +137,8 @@ Na panelu menu widać skalę i **FPS** (cel: 72).
    Zobaczysz układ: myszą obracasz widok, kółkiem przybliżasz, klikasz w przyciski panelu.
    Skróty na PC: **M** = pokaż/schowaj menu; Tryb 1 – **podwójny klik** na planecie = przelot, **+ / −** = zoom układu;
    Tryby 2 i 4 – **C** = przetnij obiekt pod kursorem, **G** = sklej, **T** = rzuć obiekt pod kursorem;
-   Tryb 6 – **+ / −** = zoom, **N / P** = następny/poprzedni obiekt, **[ / ]** = prędkość, **strzałki** = obrót obiektu;
+   Tryb 6 – **+ / −** = zoom, **N / P** = następny/poprzedni obiekt, **[ / ]** = prędkość;
+   Tryb 7 – **[ / ]** = prędkość lotu; Tryb 3 – **L** = kamera za ludzikiem (potem klik w ludzika);
    Tryb 1 – **spacja** = pauza, **, / .** = wolniej/szybciej; Tryb 5 – **+ / −** = zoom.
    > Nie otwieraj `index.html` podwójnym kliknięciem: przeglądarka zablokuje moduły JavaScript, bo plik nie idzie przez serwer.
 5. *(Opcjonalnie)* Żeby przetestować VR na PC, zainstaluj w Chrome rozszerzenie
@@ -185,8 +192,10 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 | `OBJECTS`, `MODE4_*`, `PULSAR_*`, `BLACK_HOLE_*` | Tryb 4: lista obiektów, rozmiary, animacje |
 | `GALAXY_*`, `WEB_*`, `WEB3D_*`, `MODE5_*` | Tryb 5: galaktyki wokół, tło, trójwymiarowy fragment sieci, zakres zoomu |
 | `MODE3_BEHAVIOR`, `MODE3_CLOUD_*`, `MODE3_MINI_COSMOS`, `MODE3_YEAR_S` | Tryb 3: czynności ludzików (szanse, czasy), chmurki, Słońce i planetki w tle, długość „roku” |
+| `MODE3_VILLAGES`, `MODE3_HOUSES_PER_VILLAGE`, `MODE3_HOME_SHARE`, `MODE3_VOLCANO`, `MODE3_STORM`, `MODE3_MOON` | Tryb 3: wioski z domkami, wulkan, burza, księżyc i satelita (`false` = wyłącz) |
+| `MODE3_FOLLOW_SCALE`, `MODE3_FOLLOW_DISTANCE_M`, `MODE3_FOLLOW_DROP_M` | Tryb 3: kamera za ludzikiem (powiększenie, odległość ludzika od Ciebie) |
 | `MODE3_PLANET_DETAIL`, `MODE3_SEA_LEVEL`, `MODE3_MOUNTAIN_HEIGHT`, `MODE3_TREE_COUNT` | Tryb 3: wygląd planety generowanej w kodzie (`MODE3_USE_MODEL_PLANET_FILE = true` – planeta z pliku) |
-| `MW_*` | Tryb 7: liczba gwiazd, rozmiar na starcie, pochylenie, prędkość zoomu |
+| `MW_*` | Tryb 7: liczba gwiazd, rozmiar na starcie, pochylenie, prędkość zoomu (`MW_SPEED_MIN/MAX` – zakres suwaka) |
 | `MODEL_FILES`, `PERSON_*` | pliki modeli 3D; nazwa animacji chodu i obrót modelu ludzika |
 | `SCALE_*`, `SCALE_OBJECTS` | Tryb 6: lista obiektów (rozmiar, opis), progi znikania, prędkość zoomu |
 | `MENU_*` | panel menu: rozmiar, odległość, położenie zakładki schowanego menu |
