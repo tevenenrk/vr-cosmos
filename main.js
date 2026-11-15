@@ -336,8 +336,11 @@ const MW_SPEED_MAX = 5;                // suwak w menu: najszybciej
 const MW_SCALE_MAX = 7e8;              // największe przybliżenie [m na rok świetlny] – Ziemia ma wtedy ok. 0,95 m
 const MW_TO_EARTH_FROM = 4.6;          // od tej skali (cały Układ Słoneczny ok. 2 m) punkt zoomu przesuwa się ze Słońca...
 const MW_TO_EARTH_TO = 7.6;            // ...do Ziemi (log10 m/rok św.) – Słońce mijasz z boku, małe
-const MW_NEAR_STARS = 60000;           // gwiazdy w sąsiedztwie Słońca (pojawiają się stopniowo przy przybliżaniu)
-const MW_NEAR_RADIUS_LY = 1500;        // ...w takim promieniu wokół Słońca (dalej Galaktykę tworzą jej własne gwiazdy)
+const MW_STAR_DENSITY = 0.004;         // gwiazdy na rok świetlny³ w sąsiedztwie Słońca (prawdziwa gęstość)
+const MW_NEAR_REAL_LY = 160;           // do tej odległości od Słońca gwiazdy mają prawdziwą gęstość (ok. 55 tys. gwiazd)
+const MW_NEAR_VIEW = 30000;            // przy oddaleniu: ok. tyle gwiazd w zasięgu wzroku (dalsze – rzadziej, ciemniej)
+const MW_NEAR_RADIUS_LY = 1500;        // sąsiedztwo Słońca ma taki promień (dalej Galaktykę tworzą jej własne gwiazdy)
+const MW_ECLIPTIC_TILT_DEG = 60;       // płaszczyzna orbit planet jest nachylona do dysku Galaktyki o ok. 60°
 const MW_SKY_M = 3000;                 // dalsze gwiazdy są rysowane na niebie (sfera o tym promieniu) – Droga Mleczna zawsze widoczna
 
 // --- Tryb 8: czasoprzestrzeń – siatka wyginana przez masy -------------------
@@ -365,6 +368,8 @@ const SR_SPEEDS = [0, 0.1, 0.5, 0.87, 0.99, 0.999];   // prędkości do wyboru (
 
 // --- Tryb 10: podróż od człowieka do całego kosmosu -----------------------------
 const J_SCALE_START_M = 1;             // na starcie 1 m w goglach = 1 m naprawdę (człowiek w prawdziwej wielkości)
+const J_ATMOSPHERE_KM = 100;           // Podróż: grubość atmosfery (niebieskie niebo z bliska, poświata nad brzegiem Ziemi z kosmosu)
+const J_SUN_ELEVATION_DEG = 55;        // Podróż: Słońce tak wysoko nad człowiekiem (dzień)
 
 // --- Menu (panel w VR) ------------------------------------------------
 const MENU_WIDTH_M = 0.48;          // szerokość panelu [m]
@@ -4736,7 +4741,7 @@ const cosmos = (() => {
 
   const specs = [];
   // Nasza Grupa Lokalna w prawdziwej skali (1 m = 1 mln lat św.)
-  specs.push({ kind: 'barred', pos: new THREE.Vector3(0, -0.35, -0.7), size: 0.1, fixed: true, name: 'Droga Mleczna – tu jesteśmy', normal: new THREE.Vector3(0.2, 1, 0.3) });
+  specs.push({ kind: 'barred', pos: new THREE.Vector3(0, -0.35, -0.7), size: 0.1, fixed: true, isMW: true, name: 'Droga Mleczna – tu jesteśmy', normal: new THREE.Vector3(0.2, 1, 0.3) });
   specs.push({ kind: 'spiral2', pos: new THREE.Vector3(0.55, 0.25, -0.8).normalize().multiplyScalar(2.5), size: 0.22, fixed: true, name: 'Galaktyka Andromedy (2,5 mln lat św.)', normal: new THREE.Vector3(0.9, 0.35, 0.3) });
   const pickKind = () => { let r = rnd(); for (const k of GALAXY_KINDS) { if ((r -= k.share) <= 0) return k.kind; } return 'spiral2'; };
   while (specs.length < GALAXY_COUNT) {
@@ -4761,7 +4766,7 @@ const cosmos = (() => {
     const color = new THREE.Color();
     list.forEach((s, index) => {
       const g = {
-        mesh, index, billboard: k.billboard, pos: s.pos.clone(), size: s.size, fixed: !!s.fixed,
+        mesh, index, billboard: k.billboard, pos: s.pos.clone(), size: s.size, fixed: !!s.fixed, isMW: !!s.isMW,
         aspect: k.billboard ? 0.6 + rnd() * 0.4 : 1,
         vel: s.fixed ? new THREE.Vector3() : new THREE.Vector3(gauss(), gauss(), gauss()).normalize().multiplyScalar(GALAXY_DRIFT_MPS * (0.3 + rnd())),
         quat: new THREE.Quaternion().setFromUnitVectors(Z_AXIS, (s.normal || new THREE.Vector3(gauss(), gauss(), gauss())).normalize()),
@@ -4801,6 +4806,7 @@ function updateGalaxies(dt) {
       _q1.copy(g.quat);
     }
     _scale.set(g.size, g.size * g.aspect, 1);
+    if (g.isMW && state.journey) _scale.setScalar(1e-9);          // w Podróży Drogę Mleczną rysuje jej własny obraz dysku
     _m2.compose(g.pos, _q1, _scale);
     g.mesh.setMatrixAt(g.index, _m2);
   }
@@ -5644,21 +5650,22 @@ const SUN_R_AU = 696340 / KM_PER_AU, EARTH_R_AU = 6371 / KM_PER_AU, MOON_R_AU = 
 // Gwiazdy dalej niż MW_SKY_M od punktu zoomu rysujemy na sferze o tym promieniu – w tym samym kierunku,
 // więc wyglądają tak samo, a nie uciekają poza zasięg kamery. Dzięki temu z bliska Słońca i Ziemi
 // widać na niebie pas Drogi Mlecznej utworzony przez te same gwiazdy, które z daleka tworzą całą Galaktykę.
-const mwSkyUniforms = { uCenter: { value: new THREE.Vector3() }, uSky: { value: MW_SKY_M } };
+const mwSkyUniforms = { uCenter: { value: new THREE.Vector3() }, uSky: { value: MW_SKY_M }, uDim: { value: 1 } };
 function skyPointsMaterial(size, extra = null) {
   const mat = new THREE.PointsMaterial({ size, sizeAttenuation: false, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
   mat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, mwSkyUniforms, extra ? extra.uniforms : {});
-    sh.vertexShader = 'uniform vec3 uCenter;\nuniform float uSky;\nvarying float vFade;\n' + (extra ? extra.head : '') +
+    sh.vertexShader = 'uniform vec3 uCenter;\nuniform float uSky;\nuniform float uDim;\nvarying float vFade;\n' + (extra ? extra.head : '') +
       sh.vertexShader.replace('#include <project_vertex>', `
         vec4 wp = modelMatrix * vec4(transformed, 1.0);
         vec3 dd = wp.xyz - uCenter;
         float ln = length(dd);
         if (ln > uSky) wp.xyz = uCenter + dd * (uSky / ln);
-        vFade = 1.0;
+        vFade = uDim;
+        float sizeK = 1.0;
         ${extra ? extra.body : ''}
         vec4 mvPosition = viewMatrix * wp;
-        gl_Position = projectionMatrix * mvPosition;`);
+        gl_Position = projectionMatrix * mvPosition;`).replace('gl_PointSize = size;', 'gl_PointSize = size * sizeK;');
     sh.fragmentShader = 'varying float vFade;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= vFade;');
   };
   mat.customProgramCacheKey = () => 'sky-' + size + (extra ? extra.key : '');
@@ -5688,6 +5695,36 @@ function makeMilkyWayBandTexture() {
     }
   }
   ctx.putImageData(img, 0, 0);
+  return canvasTexture(canvas);
+}
+
+// Obraz dysku Galaktyki narysowany z tych samych gwiazd (widok z góry): przy oddalaniu gwiazdy płynnie
+// przechodzą w ten obraz, a on jest tym, co dalej widać wśród innych galaktyk – bez przeskoku.
+const MW_DISK_SIZE_LY = 110000;
+const MW_TO_DISK_FROM = -5.2, MW_TO_DISK_TO = -4.4;         // w tym zakresie skali gwiazdy Galaktyki przechodzą w jej obraz
+const MW_DISK_FAR_OPACITY = 0.85;
+const MW_SKY_BAND_BRIGHTNESS = 0.25;     // jasność gwiazd Galaktyki widzianych z jej wnętrza (pas Drogi Mlecznej na niebie)
+function mwDiskTexture(pos, col) {
+  const W = 1024, S = MW_DISK_SIZE_LY, acc = new Float32Array(W * W * 3);
+  for (let i = 0; i < pos.length; i += 3) {
+    const px = Math.floor((pos[i] / S + 0.5) * W), py = Math.floor((pos[i + 2] / S + 0.5) * W);
+    if (px < 0 || py < 0 || px >= W || py >= W) continue;
+    const k = (py * W + px) * 3;
+    acc[k] += col[i]; acc[k + 1] += col[i + 1]; acc[k + 2] += col[i + 2];
+  }
+  const [canvas, ctx] = makeCanvas(W, W);
+  const img = ctx.createImageData(W, W);
+  for (let j = 0; j < W * W; j++) {
+    for (let c = 0; c < 3; c++) img.data[j * 4 + c] = 255 * (1 - Math.exp(-acc[j * 3 + c] * 1.2));
+    img.data[j * 4 + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const [glow, gctx] = makeCanvas(W / 4, W / 4);              // rozmyta poświata (miliardy gwiazd między punktami)
+  gctx.filter = 'blur(2px)';
+  gctx.drawImage(canvas, 0, 0, W / 4, W / 4);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.8;
+  ctx.drawImage(glow, 0, 0, W, W);
   return canvasTexture(canvas);
 }
 
@@ -5722,43 +5759,64 @@ const mw = (() => {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   const galaxy = new THREE.Group();
-  const stars = new THREE.Points(geo, skyPointsMaterial(1.8));
+  const galUniforms = { uGal: { value: 1 } };                       // 1 = gwiazdy, 0 = sam obraz dysku (z daleka)
+  const stars = new THREE.Points(geo, skyPointsMaterial(1.8, { key: 'gal', uniforms: galUniforms, head: 'uniform float uGal;\n', body: 'vFade *= uGal;' }));
   stars.frustumCulled = false;
   const bulge = makeGlowSprite(0xffd8a0, 14000, 0.35, softGlowTexture);
-  const disk = galaxyQuad('barred', 100000, 0, -Math.PI / 2);      // delikatna poświata dysku pod gwiazdami
-  disk.material.opacity = 0.35;
+  const disk = new THREE.Mesh(new THREE.PlaneGeometry(MW_DISK_SIZE_LY, MW_DISK_SIZE_LY).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
+    map: mwDiskTexture(pos, col), transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, opacity: 0.35,
+  }));
   galaxy.add(disk, stars, bulge);
   mode7Group.add(galaxy);
 
-  // sąsiedztwo Słońca: gwiazdy pojawiają się stopniowo przy przybliżaniu (tak, by ich gęstość płynnie
-  // przechodziła w gęstość reszty Galaktyki – bez "kuli" gęstszych gwiazd), a brzeg obszaru jest rozmyty
+  // sąsiedztwo Słońca: do MW_NEAR_REAL_LY prawdziwa gęstość gwiazd (ok. 0,004 na rok świetlny³), dalej warstwy coraz
+  // rzadsze. Przy danej skali pokazujemy wszędzie TAKĄ SAMĄ gęstość (uDisp: prawdziwą z bliska, mniejszą przy oddaleniu),
+  // więc nigdzie nie widać „kuli” gęstszych gwiazd. Dalsze gwiazdy (w goglach) są ciemniejsze – jak naprawdę.
   const near = new THREE.Group();
-  const nearUniforms = { uVis: { value: 0 }, uAlpha: { value: 0 }, uR: { value: new THREE.Vector3(MW_NEAR_RADIUS_LY, MW_NEAR_RADIUS_LY * 0.35, MW_NEAR_RADIUS_LY) } };
+  const nearUniforms = { uDisp: { value: MW_STAR_DENSITY }, uAlpha: { value: 0 }, uR: { value: new THREE.Vector3(MW_NEAR_RADIUS_LY, MW_NEAR_RADIUS_LY * 0.35, MW_NEAR_RADIUS_LY) } };
   const nearExtra = {
-    key: 'near', uniforms: nearUniforms,
-    head: 'attribute float rank;\nuniform float uVis;\nuniform float uAlpha;\nuniform vec3 uR;\n',
-    body: 'float rn = length(position / uR);\n vFade = uAlpha * clamp((uVis - rank) / 0.04, 0.0, 1.0) * (1.0 - smoothstep(0.6, 1.0, rn));',
+    key: 'near2', uniforms: nearUniforms,
+    head: 'attribute float rank;\nattribute float dens;\nuniform float uDisp;\nuniform float uAlpha;\nuniform vec3 uR;\n',
+    body: `float rn = length(position / uR);
+        float frac = min(1.0, uDisp / dens);
+        float de = distance(wp.xyz, cameraPosition);
+        vFade *= uAlpha * clamp((frac - rank) / (0.05 * frac + 1e-5), 0.0, 1.0) * (1.0 - smoothstep(0.6, 1.0, rn)) * clamp(pow(1.5 / de, 1.3), 0.04, 1.0);
+        sizeK = 1.0 + 1.2 * clamp(1.0 - de / 1.2, 0.0, 1.0);`,
   };
-  const nrnd = seededRandom('mwnear2');
+  const nrnd = seededRandom('mwnear3');
   const tints = [[1, 0.72, 0.5], [1, 0.9, 0.75], [1, 0.97, 0.92], [0.92, 0.95, 1], [0.72, 0.82, 1]];
-  for (const [count, size, bmin] of [[MW_NEAR_STARS - 600, 1.7, 0.3], [600, 3.2, 0.7]]) {
-    const p = [], c = [], r = [];
-    for (let i = 0; i < count; i++) {
-      let x, y, z;
-      do { x = nrnd() * 2 - 1; y = nrnd() * 2 - 1; z = nrnd() * 2 - 1; } while (x * x + y * y + z * z > 1);
-      p.push(x * MW_NEAR_RADIUS_LY, y * MW_NEAR_RADIUS_LY * 0.35, z * MW_NEAR_RADIUS_LY);
-      const t = tints[Math.floor(nrnd() * tints.length)], b = bmin + nrnd() * (1 - bmin);
-      c.push(t[0] * b, t[1] * b, t[2] * b);
-      r.push(nrnd());
+  const sets = [{ size: 1.7, p: [], c: [], r: [], d: [] }, { size: 3.2, p: [], c: [], r: [], d: [] }];   // zwykłe i jasne
+  const Hz = 300, sphV = r => 4 / 3 * Math.PI * r ** 3;                  // grubość dysku (wysokość skali) ~300 lat św.
+  const R0 = MW_NEAR_REAL_LY;
+  for (const [r0, r1] of [[0, R0], [R0, 2 * R0], [2 * R0, 700], [700, MW_NEAR_RADIUS_LY]]) {
+    const rr = () => Math.cbrt(r0 ** 3 + nrnd() * (r1 ** 3 - r0 ** 3));
+    let acc = 0;
+    for (let i = 0; i < 3000; i++) acc += Math.exp(-Math.abs(rr() * (nrnd() * 2 - 1)) / Hz);
+    const vol = (sphV(r1) - sphV(r0)) * acc / 3000;                    // objętość „efektywna” (dysk rzednie w pionie)
+    const count = r0 === 0 ? Math.round(MW_STAR_DENSITY * vol) : Math.round(MW_NEAR_VIEW * 1.25 * vol / sphV(r1));
+    const dens = count / vol;
+    for (let i = 0; i < count;) {
+      const r = rr(), u = nrnd() * 2 - 1, th = nrnd() * Math.PI * 2, q = Math.sqrt(1 - u * u);
+      if (nrnd() > Math.exp(-Math.abs(r * u) / Hz)) continue;
+      const set = sets[nrnd() < 0.012 ? 1 : 0];
+      set.p.push(r * q * Math.cos(th), r * u, r * q * Math.sin(th));
+      const t = tints[Math.floor(nrnd() * tints.length)], b = set === sets[1] ? 0.7 + nrnd() * 0.3 : 0.3 + nrnd() * 0.7;
+      set.c.push(t[0] * b, t[1] * b, t[2] * b);
+      set.r.push(nrnd()); set.d.push(dens);
+      i++;
     }
+  }
+  for (const set of sets) {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
-    g.setAttribute('rank', new THREE.Float32BufferAttribute(r, 1));
-    const pts = new THREE.Points(g, skyPointsMaterial(size, nearExtra));
+    g.setAttribute('position', new THREE.Float32BufferAttribute(set.p, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(set.c, 3));
+    g.setAttribute('rank', new THREE.Float32BufferAttribute(set.r, 1));
+    g.setAttribute('dens', new THREE.Float32BufferAttribute(set.d, 1));
+    const pts = new THREE.Points(g, skyPointsMaterial(set.size, nearExtra));
     pts.frustumCulled = false;
     near.add(pts);
   }
+  near.userData.count = sets[0].p.length / 3 + sets[1].p.length / 3;
   mode7Group.add(near);
   // najbardziej znane gwiazdy (poświata + podpis); położenie liczone co klatkę (daleko = na niebie)
   const namedList = [['Alfa Centauri (4,4 lat św.)', 4.37], ['Syriusz (8,6)', 8.6], ['Wega (25)', 25], ['Arktur (37)', 37], ['Gwiazda Polarna (430)', 433],
@@ -5821,7 +5879,7 @@ const mw = (() => {
   };
   for (const l of Object.values(labels)) mode7Group.add(l);
   const matsOf = g => { const m = []; g.traverse(o => { if (o.material) { o.material.transparent = true; o.material.userData.baseOpacity = o.material.opacity; m.push(o.material); } }); return m; };
-  return { galaxy, stars, near, nearUniforms, named, band, bandMesh, core, solar, earthOrbit, oort, sunMesh, earthSys, earthPivot, earth: earth.group, moon: moon.group,
+  return { galaxy, stars, galUniforms, disk, near, nearUniforms, named, band, bandMesh, core, solar, earthOrbit, oort, sunMesh, earthSys, earthPivot, earth: earth.group, moon: moon.group,
     marker, earthMarker, labels, nep, mats: { glow: [disk.material, bulge.material], solar: matsOf(solar) } };
 })();
 for (const m of mw.mats.glow) m.userData.baseOpacity = m.opacity;
@@ -5834,6 +5892,156 @@ for (const m of mw.mats.glow) m.userData.baseOpacity = m.opacity;
 //   Punkt zoomu: człowiek → (Ziemia schodzi w dół, widać jej krzywiznę) → środek Ziemi → Słońce → Galaktyka.
 // =====================================================================
 const J_EARTH_R = 6.371e6;
+// mgła powietrza nad dalekim gruntem (w dzień) i drobne szczegóły gruntu z bliska – dopisywane do materiałów Ziemi
+function jHazeShader(mat, U, detail) {
+  mat.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vLP;\nvarying float vVD;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\n  vLP = position;\n  vVD = -mvPosition.z;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+      varying vec3 vLP; varying float vVD;
+      uniform float uDetail; uniform vec3 uHaze; uniform float uHazeK; uniform float uDay;
+      float jH(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+      float jN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(jH(i), jH(i + vec2(1.0, 0.0)), f.x), mix(jH(i + vec2(0.0, 1.0)), jH(i + vec2(1.0, 1.0)), f.x), f.y); }
+      float jDetail(vec2 p) {
+        float fw = max(length(fwidth(p)), 1e-3), k = 0.0, wl = 24000.0;
+        for (int i = 0; i < 10; i++) { k += (jN(p / wl + float(i) * 7.31) - 0.5) * 0.34 * smoothstep(3.0, 8.0, wl / fw); wl *= 0.5; }
+        return k;
+      }`);
+    if (detail) sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      { float k = jDetail(vLP.xz) * uDetail; diffuseColor.rgb *= vec3(1.0 + k * 1.1, 1.0 + k, 1.0 + k * 0.8); }`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `#include <opaque_fragment>
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, uHaze, (1.0 - exp(-vVD * uHazeK)) * uDay);`);
+  };
+  mat.customProgramCacheKey = () => 'jhaze' + (detail ? 'd' : '');
+  mat.needsUpdate = true;
+}
+const J_ATMO_VERTEX = `
+#include <common>
+#include <logdepthbuf_pars_vertex>
+varying vec3 vW;
+void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vW = w.xyz;
+  gl_Position = projectionMatrix * viewMatrix * w;
+  #include <logdepthbuf_vertex>
+}`;
+// rozpraszanie Rayleigha: niebieskie światło rozprasza się mocniej; gęstość powietrza maleje wykładniczo z wysokością.
+// Odległości liczone względem środka Ziemi z wartości podanych z JS (podwójna precyzja) – działa i przy 1 m = 1 m.
+const J_ATMO_FRAGMENT = `
+#include <common>
+#include <logdepthbuf_pars_fragment>
+uniform vec3 uUp, uSun;
+uniform float uRh, uR, uHs, uCG, uCA, uI;
+varying vec3 vW;
+void main() {
+  #include <logdepthbuf_fragment>
+  vec3 d = normalize(vW - cameraPosition);
+  float b = uRh * dot(d, uUp);
+  float da = b * b - uCA;
+  if (da <= 0.0) discard;
+  float sq = sqrt(da);
+  float t0 = max(0.0, -b - sq), t1 = -b + sq;
+  float dg = b * b - uCG;
+  if (b < 0.0 && dg > 0.0) t1 = min(t1, max(t0, -b - sqrt(dg)));
+  if (t1 <= t0) discard;
+  const int N = 12;
+  float len = t1 - t0;
+  vec3 beta = vec3(0.16, 0.37, 0.85);
+  vec3 sum = vec3(0.0);
+  float od = 0.0;
+  for (int i = 0; i < N; i++) {
+    float fa = float(i) / float(N), fb = float(i + 1) / float(N);
+    float ta = t0 + len * fa * fa, tb = t0 + len * fb * fb;          // gęściej blisko oka (tam powietrze jest gęste)
+    vec3 p = uUp * uRh + d * (0.5 * (ta + tb));
+    float r = length(p);
+    float dens = exp(-max(0.0, r - uR) / uHs) * (tb - ta) / uHs;
+    float lit = smoothstep(-0.12, 0.08, dot(p / r, uSun));
+    sum += (exp(-beta * od) - exp(-beta * (od + dens))) * lit;      // światło rozproszone na tym odcinku i osłabione po drodze
+    od += dens;
+  }
+  float mu = dot(d, uSun);
+  vec3 col = sum * 0.75 * (1.0 + mu * mu) * uI;
+  col = 1.0 - exp(-col * 1.3);
+  gl_FragColor = vec4(col, exp(-0.45 * od));
+}`;
+// Próbnik kuli Ziemi: kierunek (z jej środka) → współrzędne tekstury i kolor. Model ma własny układ tekstury,
+// więc szukamy trójkąta, przez który przechodzi ten kierunek (kosze wg kierunku przyspieszają szukanie).
+function makeGlobeSampler(root) {
+  let mesh = null;
+  root.traverse(o => { if (!mesh && o.isMesh && o.geometry.attributes.uv && o.material.map && o.material.map.image) mesh = o; });
+  if (!mesh) return null;
+  root.updateMatrixWorld(true);
+  const M = new THREE.Matrix4().copy(root.matrixWorld).invert().multiply(mesh.matrixWorld);
+  const g = mesh.geometry, P = g.attributes.position, U = g.attributes.uv, I = g.index;
+  const vp = new Float32Array(P.count * 3), v = new THREE.Vector3();
+  for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i).applyMatrix4(M); vp[i * 3] = v.x; vp[i * 3 + 1] = v.y; vp[i * 3 + 2] = v.z; }
+  const nT = (I ? I.count : P.count) / 3, tri = new Uint32Array(nT * 3);
+  for (let k = 0; k < nT * 3; k++) tri[k] = I ? I.getX(k) : k;
+  const BW = 96, BH = 48, bins = Array.from({ length: BW * BH }, () => []);
+  const binOf = (x, y, z) => {
+    const l = Math.hypot(x, y, z) || 1;
+    const bi = Math.min(BH - 1, Math.floor(Math.acos(Math.max(-1, Math.min(1, y / l))) / Math.PI * BH));
+    return [bi, Math.floor((Math.atan2(z, x) + Math.PI) / (2 * Math.PI) * BW) % BW];
+  };
+  for (let t = 0; t < nT; t++) {
+    let x = 0, y = 0, z = 0;
+    for (let k = 0; k < 3; k++) { const j = tri[t * 3 + k] * 3; x += vp[j]; y += vp[j + 1]; z += vp[j + 2]; }
+    const [bi, bj] = binOf(x, y, z);
+    bins[bi * BW + bj].push(t);
+  }
+  const out = { u: 0, v: 0 };
+  const hit = (t, dx, dy, dz) => {                      // promień ze środka (Möller–Trumbore)
+    const a = tri[t * 3] * 3, b = tri[t * 3 + 1] * 3, c = tri[t * 3 + 2] * 3;
+    const e1x = vp[b] - vp[a], e1y = vp[b + 1] - vp[a + 1], e1z = vp[b + 2] - vp[a + 2];
+    const e2x = vp[c] - vp[a], e2y = vp[c + 1] - vp[a + 1], e2z = vp[c + 2] - vp[a + 2];
+    const px = dy * e2z - dz * e2y, py = dz * e2x - dx * e2z, pz = dx * e2y - dy * e2x;
+    const det = e1x * px + e1y * py + e1z * pz;
+    if (Math.abs(det) < 1e-12) return false;
+    const inv = 1 / det, tx = -vp[a], ty = -vp[a + 1], tz = -vp[a + 2];
+    const bu = (tx * px + ty * py + tz * pz) * inv;
+    if (bu < -1e-6 || bu > 1 + 1e-6) return false;
+    const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
+    const bv = (dx * qx + dy * qy + dz * qz) * inv;
+    if (bv < -1e-6 || bu + bv > 1 + 1e-6) return false;
+    if ((e2x * qx + e2y * qy + e2z * qz) * inv <= 0) return false;
+    const ia = tri[t * 3], ib = tri[t * 3 + 1], ic = tri[t * 3 + 2], w = 1 - bu - bv;
+    out.u = U.getX(ia) * w + U.getX(ib) * bu + U.getX(ic) * bv;
+    out.v = U.getY(ia) * w + U.getY(ib) * bu + U.getY(ic) * bv;
+    return true;
+  };
+  let last = 0;
+  function uvAt(d) {
+    if (hit(last, d.x, d.y, d.z)) return out;
+    const [bi, bj] = binOf(d.x, d.y, d.z);
+    const wide = bi <= 1 || bi >= BH - 2;
+    for (let i = Math.max(0, bi - 1); i <= Math.min(BH - 1, bi + 1); i++) {
+      for (let jj = wide ? 0 : -1; jj <= (wide ? BW - 1 : 1); jj++) {
+        const j = wide ? jj : (bj + jj + BW) % BW;
+        for (const t of bins[i * BW + j]) if (hit(t, d.x, d.y, d.z)) { last = t; return out; }
+      }
+    }
+    return null;
+  }
+  // piksele tekstury (kolor w danym miejscu)
+  const map = mesh.material.map, img = map.image;
+  const TW = Math.min(2048, img.width), TH = Math.min(2048, img.height);
+  const [cv, ctx] = makeCanvas(TW, TH);
+  ctx.drawImage(img, 0, 0, TW, TH);
+  const px = ctx.getImageData(0, 0, TW, TH).data;
+  function colorAt(u, v, res) {
+    u = u - Math.floor(u); v = v - Math.floor(v);
+    if (map.flipY) v = 1 - v;
+    const x = u * TW - 0.5, y = v * TH - 0.5, x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0;
+    for (let c = 0; c < 3; c++) {
+      const g2 = (xx, yy) => px[((Math.min(TH - 1, Math.max(0, yy)) * TW) + ((xx % TW + TW) % TW)) * 4 + c];
+      res[c] = (g2(x0, y0) * (1 - fx) + g2(x0 + 1, y0) * fx) * (1 - fy) + (g2(x0, y0 + 1) * (1 - fx) + g2(x0 + 1, y0 + 1) * fx) * fy;
+    }
+    return res;
+  }
+  return { uvAt, colorAt, map, mesh };
+}
 const J_LOG_MAX = Math.log10(M_PER_LY / J_SCALE_START_M);        // 1 m w goglach = J_SCALE_START_M m naprawdę
 const J_LOG_MIN = Math.log10(MODE5_SCALE_MIN * 1e-6);            // najmocniejsze oddalenie Trybu 5 (sieć kosmiczna)
 const J_BELOW_FROM = 8.7, J_BELOW_TO = 9.15;                      // tu punkt centralny przechodzi z człowieka na całą Ziemię
@@ -5842,23 +6050,30 @@ state.journey = false;
 const journey = (() => {
   const layer = new THREE.Group();                                // powierzchnia: jednostki = metry, (0,0,0) = stopy człowieka
   mode7Group.add(layer);
-  // grunt: czasza kuli (promień Ziemi) – gęsta siatka blisko człowieka, rzadsza dalej
-  const A = 0.08, NR = 120, NS = 160;
-  const pos = [], col = [], idx = [];
-  const noise = makeNoise3('journey'), c = new THREE.Color(), c2 = new THREE.Color();
+  // grunt: czasza kuli (promień Ziemi) – gęsta siatka blisko człowieka, rzadsza dalej. Kolory bierze z tej samej
+  // tekstury co kula Ziemi (wypalane przy pierwszym wejściu, journeyPrepare), więc przy oddalaniu grunt płynnie
+  // przechodzi w Ziemię; z bliska dochodzą drobne szczegóły (szum w kilku skalach).
+  // czasza sięga ok. 3800 km od człowieka (A = 0,6 rad) – dalej niż horyzont, aż Ziemia jest mała; tekstura ma
+  // nieliniowe współrzędne (CAP_P), więc blisko człowieka jest szczegółowa, a przy brzegu rzadsza
+  const A = 0.6, NR = 140, NS = 160, CAP_W = J_EARTH_R * Math.sin(A), CAP_P = 0.6;
+  const pos = [], col = [], uv = [], idx = [];
+  const c = new THREE.Color(), c2 = new THREE.Color();
   const EV = new THREE.Vector3(14000, 0, -26000);                 // Everest: 30 km na wprost i w prawo
-  pos.push(0, 0, 0); col.push(0.38, 0.6, 0.3);
+  const vtx = (x, y, z) => {
+    pos.push(x, y, z);
+    const rho = Math.hypot(x, z), rq = Math.pow(rho / CAP_W, CAP_P);
+    uv.push(rho > 0 ? 0.5 + 0.5 * x / rho * rq : 0.5, rho > 0 ? 0.5 + 0.5 * z / rho * rq : 0.5);
+    const dEv = Math.hypot(x - EV.x, z - EV.z);
+    c.setRGB(1, 1, 1);
+    if (dEv < 40000) c.lerp(c2.setRGB(0.85, 0.8, 0.75), 1 - dEv / 40000);   // Himalaje: skały
+    col.push(c.r, c.g, c.b);
+  };
+  vtx(0, 0, 0);
   for (let i = 1; i <= NR; i++) {
     const a = A * Math.pow(i / NR, 2.2);
     for (let j = 0; j < NS; j++) {
       const f = j / NS * Math.PI * 2;
-      const x = J_EARTH_R * Math.sin(a) * Math.cos(f), z = J_EARTH_R * Math.sin(a) * Math.sin(f);
-      const y = J_EARTH_R * (Math.cos(a) - 1);
-      pos.push(x, y, z);
-      const n = noise(x / 9000, 0, z / 9000, 3), dEv = Math.hypot(x - EV.x, z - EV.z);
-      c.setHex(n > 0.15 ? 0x4f7f3a : n > -0.2 ? 0x6a9a48 : 0x8a8a5a);
-      if (dEv < 60000) c.lerp(c2.setHex(0x8a7f72), 1 - dEv / 60000);                 // Himalaje: skały
-      col.push(c.r, c.g, c.b);
+      vtx(J_EARTH_R * Math.sin(a) * Math.cos(f), J_EARTH_R * (Math.cos(a) - 1), J_EARTH_R * Math.sin(a) * Math.sin(f));
     }
   }
   for (let j = 0; j < NS; j++) idx.push(0, 1 + (j + 1) % NS, 1 + j);
@@ -5869,14 +6084,17 @@ const journey = (() => {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  const skyU = { uDetail: { value: 1 }, uHaze: { value: new THREE.Color(0.72, 0.8, 0.9) }, uHazeK: { value: 0 }, uDay: { value: 1 } };
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x8a8a6a, vertexColors: true, roughness: 0.92, metalness: 0, transparent: true,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  jHazeShader(groundMat, skyU, true);
+  const ground = new THREE.Mesh(geo, groundMat);
   ground.frustumCulled = false;
-  layer.add(ground, new THREE.HemisphereLight(0xcfe4ff, 0x5a6a4a, 1.2));
-  const sunL = new THREE.DirectionalLight(0xfff4e0, 1.6);
-  sunL.position.set(0.4, 1, 0.3);
-  layer.add(sunL, sunL.target);
+  ground.renderOrder = -1;
+  layer.add(ground, new THREE.HemisphereLight(0xcfe4ff, 0x5a6a4a, 0.55));
   // obiekty w prawdziwej wielkości (modele z Trybu 6)
   const drop = d => J_EARTH_R * (Math.cos(d / J_EARTH_R) - 1);       // krzywizna: ile grunt opada na odległość d
   const put = (id, x, z, yaw = 0) => {
@@ -5896,11 +6114,25 @@ const journey = (() => {
   };
   const items = [put('human', 0, 0, Math.PI), put('bus', 6, -14, 0.4), put('eiffel', -170, -420, 0.3), put('everest', EV.x, EV.z, 0)];
   // Ziemia (model z teksturą) – zastępuje Ziemię z Trybu 7; ląd u góry
-  const earth = buildVisual(BODIES.find(b => b.id === 'earth'), 1).group;
+  const earthV = buildVisual(BODIES.find(b => b.id === 'earth'), 1), earth = earthV.group;
+  for (const m of earthV.materials || []) jHazeShader(m, skyU, false);
   const earthWrap = new THREE.Group();
   earthWrap.add(earth);
-  earth.rotation.set(0.5, 2.1, 0);
   mode7Group.add(earthWrap);
+  // atmosfera: powłoka nad Ziemią; jej kolor liczy shader (rozpraszanie światła w powietrzu wzdłuż promienia wzroku):
+  // z dołu niebieskie niebo i jaśniejszy horyzont, z kosmosu cienka niebieska poświata nad brzegiem Ziemi
+  const atmoU = { uUp: { value: new THREE.Vector3() }, uSun: { value: new THREE.Vector3(0, 1, 0) }, uRh: { value: 1 }, uR: { value: 1 }, uHs: { value: 1 },
+    uCG: { value: 0 }, uCA: { value: 0 }, uI: { value: 1.6 } };
+  const atmo = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 64), new THREE.ShaderMaterial({
+    uniforms: atmoU, vertexShader: J_ATMO_VERTEX, fragmentShader: J_ATMO_FRAGMENT, side: THREE.BackSide, transparent: true, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.SrcAlphaFactor, blendEquation: THREE.AddEquation,
+  }));
+  atmo.frustumCulled = false;
+  atmo.renderOrder = 5;
+  mode7Group.add(atmo);
+  const sun = makeGlowSprite(0xfff0d0, 1, 1), sunCore = makeGlowSprite(0xffffff, 1, 1);
+  sun.renderOrder = sunCore.renderOrder = 6;
+  mode7Group.add(sun, sunCore);
   const earthLabel = makeLabel('Ziemia · średnica 12 742 km');
   mode7Group.add(earthLabel);
   // sieć kosmiczna i Grupa Lokalna (jednostki: mln lat św.; Droga Mleczna w (0,-0.35,-0.7) jak w Trybie 5)
@@ -5924,14 +6156,96 @@ const journey = (() => {
     .map(([t, p]) => { const l = makeLabel(t); mode7Group.add(l); return { l, p }; });
   const mats = [webPts.material, nearGal.material, andro.material];
   for (const m of mats) m.userData.baseOpacity = m.opacity;
-  return { layer, ground, items, earthWrap, earthLabel, web, webLabels, mats, mwPosInWeb: new THREE.Vector3(0, -0.35, -0.7) };
+  return { layer, ground, groundMat, skyU, items, earth, earthWrap, earthLabel, atmo, atmoU, sun, sunCore, capW: CAP_W, capP: CAP_P, Qa: new THREE.Quaternion(), ready: false, bake: null,
+    web, webLabels, mats, mwPosInWeb: new THREE.Vector3(0, -0.35, -0.7) };
 })();
-journey.layer.visible = journey.earthWrap.visible = false;
+journey.layer.visible = journey.earthWrap.visible = journey.atmo.visible = journey.sun.visible = journey.sunCore.visible = false;
 
+// raz, przy pierwszym wejściu: miejsce człowieka na kuli Ziemi (ląd, nie ocean ani chmury) i tekstura gruntu
+// wycięta z tekstury kuli – dzięki temu grunt i kula Ziemi wyglądają tak samo i przechodzą w siebie bez przeskoku
+function journeyPrepare() {
+  const J = journey;
+  if (J.ready) return;
+  J.ready = true;
+  J.earthWrap.position.set(0, 0, 0); J.earthWrap.quaternion.identity(); J.earthWrap.scale.setScalar(1);
+  const smp = makeGlobeSampler(J.earthWrap);
+  if (!smp) return;
+  const res = [0, 0, 0], e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), d2 = new THREE.Vector3();
+  const axis = new THREE.Vector3(0, 1, 0).applyQuaternion(J.earth.quaternion);
+  const land = d => {
+    const uv = smp.uvAt(d);
+    if (!uv) return 0;
+    const [r, g, b] = smp.colorAt(uv.u, uv.v, res);
+    if (b > r + 12 && b >= g - 6) return 0;                       // ocean
+    if (r > 165 && g > 165 && b > 165) return 0;                  // chmury, lód
+    if (Math.max(r, g, b) < 25) return 0;
+    return g >= b && g >= r * 0.8 ? 1.3 : 1;                      // zielony ląd – najlepiej
+  };
+  let best = new THREE.Vector3(0, 1, 0), bestS = -1;
+  for (const d of fibonacciDirs(400)) {
+    if (Math.abs(d.dot(axis)) > 0.8) continue;                    // nie przy biegunach
+    e1.crossVectors(d, Math.abs(d.y) < 0.9 ? UP : new THREE.Vector3(1, 0, 0)).normalize();
+    e2.crossVectors(d, e1);
+    let sc = land(d) * 3;
+    for (const r of [0.012, 0.03, 0.05, 0.07]) for (let k = 0; k < 8; k++) {
+      const a = k * Math.PI / 4 + r * 10;
+      sc += land(d2.copy(d).addScaledVector(e1, Math.cos(a) * r).addScaledVector(e2, Math.sin(a) * r).normalize());
+    }
+    if (sc > bestS) { bestS = sc; best = d.clone(); }
+  }
+  J.Qa.setFromUnitVectors(best, UP);
+  const N = 1024, [cv, ctx] = makeCanvas(N, N);
+  J.bake = { smp, N, cv, ctx, img: ctx.createImageData(N, N), row: 0, QaI: J.Qa.clone().invert() };
+}
+// tekstura gruntu wypalana po kilkadziesiąt wierszy na klatkę (żeby nie było przycięcia przy wejściu w tryb)
+function journeyBakeStep() {
+  const J = journey, B = J.bake;
+  if (!B) return;
+  const res = [0, 0, 0], d = _jC, W = J.capW, N = B.N;
+  for (const end = Math.min(N, B.row + 64); B.row < end; B.row++) {
+    const py = B.row;
+    for (let px = 0; px < N; px++) {
+      const qx = (px + 0.5) / N * 2 - 1, qz = (py + 0.5) / N * 2 - 1, rq = Math.hypot(qx, qz);
+      const rho = W * Math.pow(rq, 1 / J.capP), a = Math.asin(Math.min(1, rho / J_EARTH_R)), sa = Math.sin(a);
+      d.set(rq > 0 ? sa * qx / rq : 0, Math.cos(a), rq > 0 ? sa * qz / rq : 0).applyQuaternion(B.QaI);
+      const uv = B.smp.uvAt(d);
+      if (uv) B.smp.colorAt(uv.u, uv.v, res);
+      const k = (py * N + px) * 4;
+      B.img.data[k] = res[0]; B.img.data[k + 1] = res[1]; B.img.data[k + 2] = res[2]; B.img.data[k + 3] = 255;
+    }
+  }
+  if (B.row < N) return;
+  B.ctx.putImageData(B.img, 0, 0);
+  const tex = canvasTexture(B.cv);
+  tex.flipY = false;
+  tex.anisotropy = 4;
+  J.groundMat.map = tex;
+  J.groundMat.color.setHex(0xffffff);
+  J.groundMat.needsUpdate = true;
+  J.bake = null;
+}
 function layoutMode10() {
   state.journey = true;
   layoutMode7();
   state.journey = true;
+  journeyPrepare();
+  // Słońce wysoko nad człowiekiem (dzień): miejsce Ziemi na orbicie dobrane tak, żeby Słońce było jak najbliżej
+  // wysokości J_SUN_ELEVATION_DEG, z przodu (raczej z boku niż prosto w oczy)
+  mwOrientation(99);
+  const fwd = state.mwFwd, right = new THREE.Vector3().crossVectors(fwd, UP).normalize(), QSi = mwQuatSol.clone().invert();
+  let bestV = null, bestS = -1e9;
+  const el = J_SUN_ELEVATION_DEG * DEG;
+  for (let az = -85; az <= 85; az += 5) {
+    const D = fwd.clone().multiplyScalar(Math.cos(el) * Math.cos(az * DEG)).addScaledVector(right, Math.cos(el) * Math.sin(az * DEG)).addScaledVector(UP, Math.sin(el));
+    const v = D.applyQuaternion(QSi);
+    v.y = 0;
+    if (v.lengthSq() < 1e-6) continue;
+    v.normalize();
+    const wv = v.clone().applyQuaternion(mwQuatSol);
+    const sc = -Math.abs(Math.asin(wv.y) - el) - 0.15 * Math.max(0, 20 * DEG - Math.abs(az * DEG));
+    if (sc > bestS) { bestS = sc; bestV = v; }
+  }
+  if (bestV) mwSetEarthDir(bestV.negate());
   state.mwLog = J_LOG_MAX;
   state.jFloorY = renderer.xr.isPresenting ? 0 : eyePos.y - 1.6;
   state.jEye = eyePos.clone();
@@ -5940,31 +6254,65 @@ function layoutMode10() {
 const mwLogMin = () => (state.journey ? J_LOG_MIN : MW_LOG_MIN);
 const mwLogMax = () => (state.journey ? J_LOG_MAX : MW_LOG_MAX);
 
-const _jE = new THREE.Vector3(), _jA = new THREE.Vector3(), _jB = new THREE.Vector3(), _jC = new THREE.Vector3(), _jD = new THREE.Vector3(), _jN = new THREE.Vector3(), _jQ = new THREE.Quaternion(), _jQ2 = new THREE.Quaternion();
+const _jSun = new THREE.Vector3(), _jE = new THREE.Vector3(), _jA = new THREE.Vector3(), _jB = new THREE.Vector3(), _jC = new THREE.Vector3(), _jD = new THREE.Vector3(), _jN = new THREE.Vector3(), _jQ = new THREE.Quaternion(), _jQ2 = new THREE.Quaternion();
 // co klatkę (z updateMode7): powierzchnia Ziemi, Ziemia, sieć kosmiczna
-function updateJourney(dt, L, s, w, w2, Rk, piv, sAU) {
+function updateJourney(dt, L, s, w, w2, Rk, piv, sAU, sunW) {
   const J = journey, on = state.journey;
   J.layer.visible = J.earthWrap.visible = J.web.visible = on && true;
+  J.atmo.visible = J.sun.visible = J.sunCore.visible = false;
   for (const it of J.items) it.label.visible = false;
   J.earthLabel.visible = false;
   for (const wl of J.webLabels) wl.l.visible = false;
+  mwSkyUniforms.uDim.value = 1;
+  stars.material.color.setScalar(1);
   if (!on) return;
   mw.earth.visible = false;
   mw.labels.earth.visible = mw.labels.earth.visible && L < 8.6;
   const k = s / M_PER_LY;                                          // metry w goglach na 1 m naprawdę
   // środek Ziemi (dokładnie, w liczbach podwójnej precyzji) i punkt pod stopami człowieka
-  const C = _jA.copy(mwEarthDir).multiplyScalar(1 - w).multiplyScalar(sAU).applyQuaternion(mwQuat).add(piv);
+  const C = _jA.copy(mwEarthDir).multiplyScalar(1 - w).multiplyScalar(sAU).applyQuaternion(mwQuatSol).add(piv);
   J.earthWrap.position.copy(C);
   J.earthWrap.scale.setScalar(Rk);
-  J.earthWrap.visible = L > 3 && L < 11.4;          // bliżej – grunt (czasza) w pełnej rozdzielczości
+  J.earthWrap.visible = L > 3 && L < 10.8;          // bliżej – grunt (czasza) z tą samą teksturą, ale ostrzejszą
   // stopy człowieka: "szczyt" Ziemi (nad środkiem)
   const n = _jN.set(0, 1, 0);
   const S = _jB.copy(C).addScaledVector(n, Rk);
   J.layer.position.copy(S);
   J.layer.scale.setScalar(k);
   J.layer.quaternion.setFromUnitVectors(UP, n).multiply(_jQ2.setFromAxisAngle(UP, state.mwYaw)).multiply(_jQ.setFromUnitVectors(new THREE.Vector3(0, 0, -1), state.mwFwd));
+  J.earthWrap.quaternion.copy(J.layer.quaternion).multiply(J.Qa);   // kula Ziemi obrócona tak, jak wycięty z niej grunt
   J.layer.visible = L > 10.6;
-  J.ground.visible = L > 11.2;
+  // grunt → kula Ziemi: grunt (ta sama tekstura) płynnie znika, odsłaniając kulę pod spodem
+  journeyBakeStep();
+  const capA = THREE.MathUtils.smoothstep(L, 10.2, 10.7);
+  J.groundMat.opacity = capA;
+  J.ground.visible = capA > 0.003;
+  J.skyU.uDetail.value = THREE.MathUtils.smoothstep(L, 11.9, 12.6);
+  // niebo i atmosfera (liczone w podwójnej precyzji względem środka Ziemi)
+  const dC = _jD.copy(eyePos).sub(C), dist = dC.length(), h = dist - Rk, At = J_ATMOSPHERE_KM * 1000 * k, U = J.atmoU;
+  J.atmo.visible = L > 6;
+  J.atmo.position.copy(C);
+  J.atmo.scale.setScalar(Rk + At);
+  U.uUp.value.copy(dC).divideScalar(dist);
+  U.uRh.value = dist; U.uR.value = Rk; U.uHs.value = 8000 * k;
+  U.uCG.value = h * (2 * Rk + h); U.uCA.value = (h - At) * (2 * Rk + h + At);
+  const sunDir = _jE.copy(sunW).sub(C).normalize();
+  U.uSun.value.copy(sunDir);
+  const day = 1 - THREE.MathUtils.smoothstep(Math.log10(Math.max(1, h / k)), 3.9, 4.8);   // wysokość oczu naprawdę: do ~8 km dzień
+  J.skyU.uDay.value = day;
+  J.skyU.uHazeK.value = 1 / (35000 * k);
+  const dim = 1 - day;                              // w dzień gwiazd nie widać
+  mwSkyUniforms.uDim.value = dim;
+  stars.material.color.setScalar(dim);
+  mw.bandMesh.material.opacity *= dim;
+  mw.core.material.opacity *= dim;
+  for (const n of mw.named) n.sprite.material.opacity *= dim;
+  const sunA = THREE.MathUtils.smoothstep(L, 9.2, 9.8);
+  J.sun.visible = J.sunCore.visible = sunA > 0.01;
+  J.sun.position.copy(eyePos).addScaledVector(sunDir, 2500);
+  J.sunCore.position.copy(J.sun.position);
+  J.sun.scale.setScalar(2500 * 0.5); J.sun.material.opacity = 0.5 * sunA;
+  J.sunCore.scale.setScalar(2500 * 0.05); J.sunCore.material.opacity = sunA;
   for (const it of J.items) {
     if (it.mixer) it.mixer.update(dt);
     const h = it.top * k;                                          // wysokość w goglach
@@ -6026,12 +6374,16 @@ function mwPath(u) {
 }
 
 const _mwBase = new THREE.Quaternion(), _mwTilt = new THREE.Quaternion();
+const mwQuatSol = new THREE.Quaternion();                     // Układ Słoneczny: płaszczyzna orbit nachylona do dysku Galaktyki
+const MW_ECLIPTIC_Q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), MW_ECLIPTIC_TILT_DEG * DEG);
 function mwOrientation(L = -99) {
   _mwBase.setFromUnitVectors(new THREE.Vector3(0, 0, -1), state.mwFwd || new THREE.Vector3(0, 0, -1));
   // z daleka dysk pochylony do Ciebie; w środku Galaktyki mniej – pas Drogi Mlecznej bliżej wysokości oczu
   const tilt = THREE.MathUtils.lerp(MW_TILT_DEG, MW_TILT_INSIDE_DEG, THREE.MathUtils.smoothstep(L, -3, -1.5));
   _mwTilt.setFromAxisAngle(new THREE.Vector3(1, 0, 0), tilt * DEG);
-  return mwQuat.setFromAxisAngle(UP, state.mwYaw).multiply(_mwBase).multiply(_mwTilt);
+  mwQuat.setFromAxisAngle(UP, state.mwYaw).multiply(_mwBase).multiply(_mwTilt);
+  mwQuatSol.copy(mwQuat).multiply(MW_ECLIPTIC_Q);
+  return mwQuat;
 }
 
 function layoutMode7() {
@@ -6047,15 +6399,19 @@ function layoutMode7() {
   mwOrientation(99);                                  // kierunek Ziemi liczony dla widoku "z wnętrza" Galaktyki
   const right = new THREE.Vector3().crossVectors(fwd, UP).normalize();
   const want = fwd.clone().multiplyScalar(Math.cos(60 * DEG)).addScaledVector(right, Math.sin(60 * DEG));
-  want.applyQuaternion(mwQuat.clone().invert());
+  want.applyQuaternion(mwQuatSol.clone().invert());
   want.y = 0;
-  mwEarthDir.copy(want.normalize());
+  mwSetEarthDir(want.normalize());
+  if (!renderer.xr.isPresenting) orbitControls.target.copy(mwPivot);
+}
+// kierunek Słońce → Ziemia (w płaszczyźnie orbit); orbita i Księżyc dopasowują się do niego
+function mwSetEarthDir(dir) {
+  mwEarthDir.copy(dir);
   mw.earthPivot.position.copy(mwEarthDir);
   mw.earthOrbit.rotation.y = Math.atan2(-mwEarthDir.z, mwEarthDir.x);
   // Księżyc: trochę za Ziemią i w bok (widać go obok niej)
   const side = new THREE.Vector3(-mwEarthDir.z, 0, mwEarthDir.x);
   mw.moon.position.copy(mwEarthDir).multiplyScalar(0.8).addScaledVector(side, -0.6).normalize().multiplyScalar(MOON_DIST_AU);
-  if (!renderer.xr.isPresenting) orbitControls.target.copy(mwPivot);
 }
 function mwZoom(decades) { state.mwAnim = null; state.mwLog = THREE.MathUtils.clamp(state.mwLog + decades, mwLogMin(), mwLogMax()); }
 function mwGoTo(log) { state.mwAnim = { from: state.mwLog, to: log, t: 0, dur: Math.max(1, Math.abs(log - state.mwLog) / state.mwSpeed) }; }
@@ -6077,20 +6433,28 @@ function mwStepAnim(dt) {
     if (a.t >= 1) state.mwAnim = null;
   }
 }
-// Tryb 10, dalej niż Galaktyka: pełna scena kosmosu z Trybu 5 (wszystkie galaktyki, sieć, tło) – z przeskokiem
+// Podróż, dalej niż Galaktyka: galaktyki, sieć kosmiczna i tło z dawnego Trybu 5 pojawiają się płynnie wokół
+// Drogi Mlecznej (ona sama zostaje – ten sam obraz dysku, w tym samym miejscu i ułożeniu, więc nic nie przeskakuje)
+const J_COSMOS_FROM = J_COSMOS_LOG + 0.5, J_COSMOS_TO = J_COSMOS_LOG - 0.3;
 function journeyCosmos(dt) {
   mwStepAnim(dt);
-  if (state.mwLog >= J_COSMOS_LOG) {
-    if (state.jCosmos) { state.jCosmos = false; mode5Group.visible = false; mode7Group.visible = true; }
-    updateMode7(dt);
-    return;
-  }
-  if (!state.jCosmos) { state.jCosmos = true; mode7Group.visible = false; mode5Group.visible = true; layoutMode5(); }
-  setUniverseScale(Math.pow(10, state.mwLog + 6));
-  // Droga Mleczna zostaje w punkcie zoomu (na środku widoku)
+  updateMode7(dt);
+  const L = state.mwLog, cA = 1 - THREE.MathUtils.smoothstep(L, J_COSMOS_TO, J_COSMOS_FROM);
+  mode5Group.visible = cA > 0.005;
+  state.jCosmos = mode5Group.visible;
+  if (!mode5Group.visible) return;
+  universe.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), state.mwFwd);
+  universe.scale.setScalar(Math.pow(10, L + 6));                  // 1 m we wnętrzu „universe” = 1 mln lat św.
+  universe.position.set(0, 0, 0);
   universe.updateMatrixWorld(true);
-  universe.position.add(_jA.copy(mwPivot).sub(universe.localToWorld(_jB.copy(journey.mwPosInWeb))));
+  universe.position.copy(mwPivot).sub(universe.localToWorld(_jB.copy(journey.mwPosInWeb)));   // Droga Mleczna w punkcie zoomu
   universe.updateMatrixWorld(true);
+  for (const m of galaxyMeshes) m.material.opacity = cA;
+  cosmos.web.material.opacity = cA;
+  cosmos.web.material.transparent = true;
+  cosmos.sky.material.transparent = true;
+  cosmos.sky.material.opacity = cA;
+  mode5Labels.visible = cA > 0.6;
   updateGalaxies(dt);
 }
 function updateMode7(dt) {
@@ -6116,24 +6480,29 @@ function updateMode7(dt) {
     const toFloor = (mwPivot.y - state.jFloorY) * THREE.MathUtils.smoothstep(L, 13.5, 15.5);   // 1:1 – grunt na podłodze
     piv.addScaledVector(UP, -(Rk * f + toFloor));
   }
-  const place = (g, focusLocal, scale) => {
-    g.quaternion.copy(mwQuat);
+  const place = (g, focusLocal, scale, q = mwQuat) => {
+    g.quaternion.copy(q);
     g.scale.setScalar(scale);
-    g.position.copy(focusLocal).multiplyScalar(-scale).applyQuaternion(mwQuat).add(piv);
+    g.position.copy(focusLocal).multiplyScalar(-scale).applyQuaternion(q).add(piv);
   };
   place(mw.galaxy, _mwW.copy(_mwF).divideScalar(AU_PER_LY).add(SUN_GAL), s);
   place(mw.near, _mwW.copy(_mwF).divideScalar(AU_PER_LY), s);
-  place(mw.solar, _mwF, sAU);
-  place(mw.earthSys, _mwF, sAU);
+  place(mw.solar, _mwF, sAU, mwQuatSol);
+  place(mw.earthSys, _mwF, sAU, mwQuatSol);
   mw.band.position.copy(mwPivot);
   mw.band.quaternion.copy(mwQuat);
 
   // co widać przy jakiej skali
   setLayerOpacity(mw.mats.glow, fadeWindow(L, -99, -98, -3.6, -2.8));
+  const galG = THREE.MathUtils.smoothstep(L, MW_TO_DISK_FROM, MW_TO_DISK_TO);       // 1 = gwiazdy, 0 = obraz dysku
+  mw.galUniforms.uGal.value = galG * THREE.MathUtils.lerp(1, MW_SKY_BAND_BRIGHTNESS, THREE.MathUtils.smoothstep(L, -2.2, -0.8))   // z wnętrza: pas na niebie
+    * Math.min(1, Math.pow(10, 1.2 * (L + 4.2)));       // z daleka: im mniejsza Galaktyka, tym ciemniejsze punkty (jasność powierzchni stała)
+  mw.disk.material.opacity *= 1 + (MW_DISK_FAR_OPACITY / 0.35 - 1) * (1 - galG);
   const nearA = THREE.MathUtils.smoothstep(L, -3.6, -3.0);
   mw.nearUniforms.uAlpha.value = nearA;
-  mw.nearUniforms.uVis.value = 0.05 * Math.pow(20, THREE.MathUtils.clamp((L + 3.2) / 3, 0, 1));
-  stars.visible = L > -1;                              // z wnętrza Galaktyki: jeszcze tło dalekich gwiazd
+  const Rv = 4 / s;                                                   // promień „w zasięgu wzroku” (ok. 4 m w goglach), w latach św.
+  mw.nearUniforms.uDisp.value = Math.min(MW_STAR_DENSITY, MW_NEAR_VIEW / (4 / 3 * Math.PI * Rv ** 3));
+  stars.visible = L > -1 && !state.journey;            // z wnętrza Galaktyki: jeszcze tło dalekich gwiazd (w Podróży – gwiazdy sąsiedztwa)
   mw.near.visible = nearA > 0.01;
   const bandA = THREE.MathUtils.smoothstep(L, -2.6, -1.2);
   mw.bandMesh.material.opacity = bandA;
@@ -6159,7 +6528,8 @@ function updateMode7(dt) {
   }
 
   // Słońce, Ziemia, Księżyc – położenia w świecie
-  const sunW = _mwW.copy(_mwF).multiplyScalar(-sAU).applyQuaternion(mwQuat).add(piv);
+  const sunW = _mwW.copy(_mwF).multiplyScalar(-sAU).applyQuaternion(mwQuatSol).add(piv);
+  _jSun.copy(sunW);
   const sunR = SUN_R_AU * sAU;
   const px = getPixelAngle();
   mw.marker.position.copy(sunW);
@@ -6181,11 +6551,11 @@ function updateMode7(dt) {
   if (lb.center.visible) placeLabel(lb.center, _mwW.copy(SUN_GAL).multiplyScalar(-s).applyQuaternion(mwQuat).add(piv), 0.02, LABEL_ANGLE_DEG);
   lb.neptune.visible = solarA > 0.5 && L < 5.5;
   if (lb.neptune.visible) {
-    const p = _mwW.set(mw.nep, 0, 0).sub(_mwF).multiplyScalar(sAU).applyQuaternion(mwQuat).add(piv);
+    const p = _mwW.set(mw.nep, 0, 0).sub(_mwF).multiplyScalar(sAU).applyQuaternion(mwQuatSol).add(piv);
     lb.neptune.visible = p.distanceTo(piv) < 60;
     placeLabel(lb.neptune, p, 0.02, LABEL_ANGLE_DEG);
   }
-  updateJourney(dt, L, s, w, w2, Rk, piv, sAU);
+  updateJourney(dt, L, s, w, w2, Rk, piv, sAU, _jSun);
 }
 
 // =====================================================================
@@ -8021,10 +8391,13 @@ const MENU_CANVAS_W = 1024, MENU_CANVAS_H = 730;
 // wysokość narysowanej części panelu (tryby z dodatkowymi rzędami przycisków mają wyższy panel)
 const menuUsedH = () => ({ 3: 716, 11: 716, 12: 716, 2: 588, 8: 588, 9: 588 }[state.mode] || 460);
 const MENU_HEIGHT_M = MENU_WIDTH_M * MENU_CANVAS_H / MENU_CANVAS_W;
+// kolejność trybów w menu (numer na przycisku = miejsce na tej liście; dawne Tryby 5 „Kosmos” i 7 „Galaktyka”
+// są teraz częścią Podróży – od człowieka do całego kosmosu)
+const MODE_ORDER = [1, 2, 3, 4, 10, 6, 8, 9, 11, 12];
 const MODE_NAMES = { 1: 'Model', 2: 'Planety', 3: 'Ludziki', 4: 'Obiekty', 5: 'Kosmos', 6: 'Skala', 7: 'Galaktyka', 8: 'Grawitacja', 9: 'Światło', 10: 'Podróż', 11: 'Atom', 12: 'Historia' };
 const menuButtons = [
   { id: 'hide', label: 'Schowaj ✕', x: 760, y: 18, w: 246, h: 70, small: true },
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => ({ id: 'mode' + m, label: 'Tryb ' + m, sub: MODE_NAMES[m], x: 18 + (m - 1) * 82.5, y: 196, w: 78, h: 120, small: true, font: 'bold 19px system-ui, sans-serif', subFont: '14px system-ui, sans-serif' })),
+  ...MODE_ORDER.map((m, i) => ({ id: 'mode' + m, label: 'Tryb ' + (i + 1), sub: MODE_NAMES[m], x: 18 + i * 99, y: 196, w: 94, h: 120, small: true, font: 'bold 22px system-ui, sans-serif', subFont: '16px system-ui, sans-serif' })),
   // Tryb 12: oś czasu, odtwarzanie, tempo
   { id: 'histTime', draw: drawHistTimeline, drag: f => histSeek(f * HIST.length), x: 18, y: 332, w: 988, h: 112, modes: [12] },
   { id: 'histPrev', label: '◀◀ Poprzedni', x: 18, y: 456, w: 236, h: 116, modes: [12], small: true, font: 'bold 30px system-ui, sans-serif' },
@@ -8043,9 +8416,7 @@ const menuButtons = [
   ...M3_TEMPS.map((T, i) => ({ id: 'temp' + T, label: T === -30 ? 'Lód −30°C' : T + '°C', x: 18 + i * 199, y: 456, w: 191, h: 116, modes: [3], small: true, font: 'bold 32px system-ui, sans-serif', active: () => m3W.T === T })),
   ...M3_EVENTS.map((e, i) => ({ id: 'ev_' + e, label: { quake: 'Płyty', volcano: 'Wulkan', tornado: 'Tornado', tsunami: 'Tsunami', meteor: 'Meteoryt', rocket: 'Rakieta', astronaut: 'Astronauta', greenhouse: 'Cieplarnia' }[e],
     x: 18 + i * 124, y: 588, w: 118, h: 116, modes: [3], small: true, font: 'bold 22px system-ui, sans-serif', active: () => !!(m3W.event && m3W.event.type === e) })),
-  { id: 'mwAll', label: '◀ Cała Galaktyka', x: 18, y: 332, w: 262, h: 112, modes: [7], small: true },
-  { id: 'mwSun', label: 'Do Ziemi ▶', x: 744, y: 332, w: 262, h: 112, modes: [7], small: true },
-  { id: 'reset', label: 'Reset', x: 18, y: 332, w: 300, h: 112, modes: [2, 3, 4, 5, 8] },
+  { id: 'reset', label: 'Reset', x: 18, y: 332, w: 300, h: 112, modes: [2, 3, 4, 8] },
   { id: 'stSheet', label: () => (state.stSheet ? 'Pokaż siatkę 3D' : 'Pokaż płachtę 2D'), x: 330, y: 332, w: 676, h: 112, modes: [8] },
   { id: 'stInside', label: () => (state.stInside ? 'Siatka przed Tobą' : 'Wejdź do środka'), x: 18, y: 456, w: 320, h: 116, modes: [8], small: true },
   { id: 'stProbes', label: () => (state.stProbes ? 'Schowaj sondy' : 'Sondy-bliźniaki'), x: 350, y: 456, w: 320, h: 116, modes: [8], small: true },
@@ -8062,7 +8433,7 @@ const menuButtons = [
   { id: 'timePlay', label: () => (state.timePaused ? '▶ Start' : '❚❚ Pauza'), x: 656, y: 332, w: 172, h: 112, modes: [1], small: true },
   { id: 'timeFast', label: 'Szybciej ▶▶', x: 840, y: 332, w: 166, h: 112, modes: [1], small: true },
   { id: 'prev', label: '◀ Mniejszy (B)', x: 18, y: 332, w: 262, h: 112, modes: [6], small: true },
-  { id: 'speed', slider: true, x: 292, y: 332, w: 440, h: 112, modes: [6, 7, 10] },
+  { id: 'speed', slider: true, x: 292, y: 332, w: 440, h: 112, modes: [6, 10] },
   { id: 'jAll', label: '◀ Cały kosmos', x: 18, y: 332, w: 262, h: 112, modes: [10], small: true },
   { id: 'jHuman', label: 'Człowiek ▶', x: 744, y: 332, w: 262, h: 112, modes: [10], small: true },
   { id: 'next', label: 'Większy (A) ▶', x: 744, y: 332, w: 262, h: 112, modes: [6], small: true },
@@ -8255,6 +8626,8 @@ function setMode(mode) {
   mode6Group.visible = mode === 6;
   mode7Group.visible = mode === 7 || mode === 10;
   state.jCosmos = false;
+  mwSkyUniforms.uDim.value = 1;                     // Podróż przyciemnia gwiazdy w dzień – w innych trybach normalnie
+  stars.material.color.setScalar(1);
   mode8Group.visible = mode === 8;
   mode9Group.visible = mode === 9;
   mode11Group.visible = mode === 11;
@@ -8573,8 +8946,7 @@ function stickGalaxy(ctrl, dt) {
   const gp = ctrl.userData.inputSource && ctrl.userData.inputSource.gamepad;
   if (!gp || gp.axes.length <= ZOOM_STICK_AXIS) return;
   const x = gp.axes[ZOOM_STICK_AXIS - 1], y = gp.axes[ZOOM_STICK_AXIS];
-  if (Math.abs(y) > STICK_DEADZONE) mwZoom(-y * state.mwSpeed * dt);
-  if (Math.abs(x) > STICK_DEADZONE) state.mwYaw -= x * 50 * DEG * dt;
+  if (Math.abs(y) > STICK_DEADZONE) mwZoom(-y * state.mwSpeed * dt);   // tylko przybliżanie i oddalanie – bez obrotu
 }
 
 // Gałka w Trybie 6: góra/dół = zoom
@@ -9004,6 +9376,6 @@ window.solar = {
   shelf2, shelf4, m3Planet, people, universe, galaxies, cosmos, menuMesh, menuTab, floaters, controllers,
   setMode, startFocus, cutItem, glueAll, startGrab, endGrab, updateGrabs, grabs, zoomSystemAround,
   setKnife, updateKnife, tryKnifeCut, grabShelf, setMenuHidden, onPressStart, onPressEnd, startBehavior, startFollow, stopFollow, m3Extras, m3Features, setM3Zoom, rotateM3Planet, m3CosmosParts,
-  m3W, m3StartEvent, m3EndEvent, setM3Temperature, m3Atmo,
+  m3W, m3StartEvent, m3EndEvent, setM3Temperature, m3Atmo, mwSkyUniforms, stars, makeGlobeSampler, mwQuatSol,
   models, scaleItems, scaleJump, scaleZoom, m3Surface, layoutMode, mwGoTo, mwZoom, mw, stObjects, stRoot, toggleSheet, mwPath, stProbes, toggleProbes, toggleInside, sr, setSrSpeed, toggleSrShip, srShip, journey, layoutMode10, surfaceAction, atom, atomSet, hist, HIST, histSeek, histSetPlaying, m3Ride, enterSurface, exitSurface, scaleFocusClick, turnAroundFocus, pitchSystem,
 };

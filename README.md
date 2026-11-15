@@ -3,7 +3,7 @@
 Interaktywny Układ Słoneczny w goglach VR, działający w przeglądarce **Meta Quest Browser**.
 Nie trzeba nic instalować w goglach: wystarczy otworzyć stronę i kliknąć **ENTER VR**.
 
-Dwanaście trybów (przełączane na panelu menu):
+Dziesięć trybów (przełączane na panelu menu):
 
 - **Tryb 1 – Model:** cały układ do orbity Plutona w prawdziwej skali, z księżycami i pierścieniami.
   Planety krążą po eliptycznych orbitach (prawa Keplera) i obracają się wokół osi, księżyce krążą wokół planet.
@@ -36,31 +36,30 @@ Dwanaście trybów (przełączane na panelu menu):
   a świat kręci się pod jego stopami. Słońce i planety na niebie widać także wtedy (i zachodzi Słońce!).
 - **Tryb 4 – Obiekty:** czarna dziura, pulsar, biały karzeł, Ziemia (dla porównania) i kometa. Są w wygodnych rozmiarach, a prawdziwe
   rozmiary podają tabliczki. Pulsar i białego karła można przeciąć.
-- **Tryb 5 – Kosmos:** stoisz w miejscu, zanurzony w ponad tysiącu miniaturowych galaktyk (1200, gęstość
-  zwiększona dla efektu – naprawdę w okolicy Drogi Mlecznej jest ich mniej). Droga Mleczna i Andromeda są w prawdziwej skali (1 m = 1 mln lat świetlnych).
-  Jedyne sterowanie to zoom (gałka lub rozsuwanie dłoni ze spustami): po pomniejszeniu widać trójwymiarowy
-  fragment sieci kosmicznej, ok. 80 tys. galaktyk we włóknach i gromadach (w prawdziwym fragmencie tej
-  wielkości jest ich jeszcze więcej, licząc karłowate); po powiększeniu do 1× wracasz
-  dokładnie do punktu startu. Tło to sfera z obrazem dalszej części sieci.
+- **Tryb 5 – Podróż (od człowieka do całego kosmosu):** jedna ciągła skala, tylko przybliżanie i oddalanie
+  (bez obracania): człowiek i autobus (1 m = 1 m, niebieskie niebo, Słońce) → wieża Eiffla → Mount Everest →
+  grunt zakrzywia się, niebo ciemnieje, pojawiają się gwiazdy → cała Ziemia z cienką niebieską poświatą
+  atmosfery → Księżyc → Układ Słoneczny → najbliższe gwiazdy → Droga Mleczna → Grupa Lokalna (Andromeda) →
+  sieć kosmiczna galaktyk. Grunt wokół człowieka ma tę samą teksturę co kula Ziemi (wycinek z niej plus drobne
+  szczegóły), więc przy oddalaniu płynnie zamienia się w planetę. W naszym ramieniu Galaktyki gwiazdy mają
+  prawdziwą gęstość (ok. 0,004 na rok świetlny³, 55 tys. gwiazd do 160 lat św.); przy oddalaniu pokazywana gęstość
+  jest wszędzie taka sama, a dalsze gwiazdy są ciemniejsze, więc nie widać „kuli” gęstszych gwiazd. Gwiazdy
+  Galaktyki z daleka przechodzą w obraz jej dysku narysowany z tych samych gwiazd i ten obraz zostaje wśród
+  innych galaktyk – bez przeskoku. Na środku widoku jest człowiek (aż widać całą Ziemię), potem Ziemia, a od
+  Drogi Mlecznej – ona.
 - **Tryb 6 – Skala:** podróż przez 33 rzędy wielkości, od atomu (0,1 nm) przez DNA, wirusa, bakterię, włos,
   mrówkę, człowieka, autobus, płetwala, wieżę Eiffla, Everest, księżyce, Ziemię, Jowisza, Słońce, Betelgezę,
   Układ Słoneczny, heliosferę, obłok Oorta, najbliższe gwiazdy, Plejady, Bąbel Lokalny i ramię Oriona po Drogę
   Mleczną i Grupę Lokalną galaktyk (39 obiektów). Kliknij obiekt – gałką obracasz się wokół niego i oglądasz
   inne skale „z jego perspektywy”; zoom działa dalej, ponowne kliknięcie wraca do zwykłego widoku.
-- **Tryb 7 – Galaktyka:** Droga Mleczna z 260 tys. gwiazd (4 ramiona spiralne, poprzeczka, zgrubienie
-  centralne) + 60 tys. gwiazd sąsiedztwa Słońca. Zoom (gałka, dwie ręce albo przycisk „Do Ziemi”) prowadzi
-  płynnie przez 13 rzędów wielkości: Galaktyka → sąsiedztwo Słońca (gwiazdy pojawiają się stopniowo) →
-  obłok Oorta i orbity planet → prosto do Ziemi z Księżycem (Słońce mijasz z boku; przy oddalaniu zawsze je widać).
-  Z wnętrza Galaktyki na niebie cały czas widać pas Drogi Mlecznej – tworzą go te same gwiazdy, które z daleka
-  tworzą spiralę. **Suwak** w menu reguluje prędkość lotu.
-- **Tryb 8 – Grawitacja (czasoprzestrzeń):** siatka cienkich linii w przestrzeni (albo „gumowa płachta” 2D),
+- **Tryb 7 – Grawitacja (czasoprzestrzeń):** siatka cienkich linii w przestrzeni (albo „gumowa płachta” 2D),
   wyginana przez Słońce, Ziemię (krąży wokół Słońca), gwiazdę neutronową, czarną dziurę i parę czarnych dziur,
   które krążą wokół siebie i wysyłają fale grawitacyjne. Obiekty chwytasz i przesuwasz – siatka wygina się na
   żywo. Kolor linii: niebieski = płasko, żółty/czerwony = mocne zakrzywienie (tam czas płynie wolniej; podpisy
   mówią o ile). Efekt jest mocno przesadzony, żeby było go widać. Możesz **wejść do środka siatki** (otacza
   Cię, a płachta 2D jest pod stopami) i obracać ją gałką. **Sondy-bliźniaki:** dwa statki z zegarami – postaw
   jeden przy czarnej dziurze, drugi daleko i porównaj, ile lat minęło każdemu.
-- **Tryb 9 – Światło (prędkość światła):** statek przelatuje wzdłuż miarki z prędkością 0,1–0,999 prędkości
+- **Tryb 8 – Światło (prędkość światła):** statek przelatuje wzdłuż miarki z prędkością 0,1–0,999 prędkości
   światła (światło jest tu „zwolnione” do 2 m/s, żeby było widać, jak leci). Statek jest krótszy γ razy,
   a jego **zegar świetlny** (błysk odbijający się między lusterkami) tyka γ razy wolniej – z Twojego punktu
   widzenia błysk leci po skosie, więc dłuższą drogą. Pod torem stoi ten sam statek w spoczynku do porównania,
@@ -68,18 +67,12 @@ Dwanaście trybów (przełączane na panelu menu):
   światła (gwiazdy skupiają się przed statkiem, mijane bramki się wyginają) i efekt Dopplera (z przodu barwy
   przesunięte ku niebieskiemu i jaśniejsze, z tyłu ku czerwieni i ciemniejsze; kolorowe lampki zmieniają
   kolor albo znikają w podczerwieni/nadfiolecie).
-- **Tryb 10 – Podróż:** jedna ciągła skala od człowieka (1 m = 1 m) do całego kosmosu: człowiek i autobus →
-  wieża Eiffla → Mount Everest na zakrzywionej Ziemi → cała Ziemia (Everest to na niej ułamek milimetra) →
-  Księżyc → Układ Słoneczny → najbliższe gwiazdy → Droga Mleczna → Grupa Lokalna (Andromeda) → sieć kosmiczna.
-  Na środku widoku jest cały czas człowiek (aż widać całą Ziemię), potem Ziemia – do samego końca; Ziemia leży
-  pod Tobą, więc nigdy nie przelatujesz przez jej wnętrze. Dalej niż Droga Mleczna włącza się (skokiem)
-  pełna scena z Trybu 5 – wszystkie galaktyki, sieć kosmiczna i tło (Droga Mleczna na środku).
-- **Tryb 11 – Atom:** chmury prawdopodobieństwa elektronów. Orbitale 1s, 2s, 2p, 3s, 3p, 3d, 4f (z wariantami
+- **Tryb 9 – Atom:** chmury prawdopodobieństwa elektronów. Orbitale 1s, 2s, 2p, 3s, 3p, 3d, 4f (z wariantami
   kształtu, np. pz/px/py), każdy punkt to jedno możliwe położenie elektronu wylosowane z |ψ|² (funkcje falowe
   atomu wodoru); kolor = znak funkcji falowej. Pierwiastki H, He, Li, C, O, Ne, Na – zajęte orbitale wg
   konfiguracji (kolor = powłoka). Biały błysk pokazuje, gdzie „zmierzylibyśmy” elektron w danej chwili.
   Dla porównania stary model Bohra (elektrony na torach jak planety).
-- **Tryb 12 – Historia atomu:** animacja przed Tobą (kamera stoi w miejscu): 13,8 mld lat jednego protonu –
+- **Tryb 10 – Historia atomu:** animacja przed Tobą (kamera stoi w miejscu): 13,8 mld lat jednego protonu –
   od Wielkiego Wybuchu do Twojego ciała, w 16 rozdziałach. Kwarki łączą się w proton → pierwsze minuty (hel) →
   pierwsze atomy (wodór, promieniowanie tła) → ciemne wieki → pierwsza gwiazda → fuzja: hel, a potem węgiel
   (nasz proton staje się jednym z 6 protonów węgla) → supernowa → miliardy lat w Galaktyce → kolejna gwiazda
@@ -145,12 +138,13 @@ Skala: od ok. **15 cm** (cały układ w dłoni) do **5 mln ×** (wtedy Ziemia ma
 | **Kamera za ludzikiem** | **B** (albo przycisk w menu), potem wyceluj promieniem w ludzika i naciśnij **spust** |
 | W trybie kamery | **gałka** góra/dół = zoom (4× – 80×), lewo/prawo = obejście ludzika dookoła; **B** = puść ludzika |
 
-### Tryb 5 – Kosmos
+### Tryb 5 – Podróż
 
 | Akcja | Jak |
 |---|---|
-| Rozglądaj się | galaktyki są wszędzie wokół, także nad i pod Tobą |
-| **Pomniejsz / powiększ kosmos** | **gałka** góra/dół albo oba spusty i rozsuwanie dłoni; przy najmocniejszym pomniejszeniu fragment sieci kosmicznej (~300 mln lat św.) jest bryłą ok. 2 m przed Tobą |
+| Od człowieka do kosmosu i z powrotem | **gałka** góra/dół, oba spusty i rozsuwanie dłoni, albo przyciski **◀ Cały kosmos** / **Człowiek ▶** |
+| Prędkość | **suwak** w menu |
+| Obrót | nie ma – rozglądasz się głową |
 
 ### Tryb 6 – Skala
 
@@ -163,16 +157,7 @@ Skala: od ok. **15 cm** (cały układ w dłoni) do **5 mln ×** (wtedy Ziemia ma
 
 Napis pod obiektami podaje skalę, np. „1 m w goglach = 2,9 m naprawdę”.
 
-### Tryb 7 – Galaktyka
-
-| Akcja | Jak |
-|---|---|
-| Lot Galaktyka → Ziemia / z powrotem | **gałka** góra/dół, oba spusty i rozsuwanie dłoni, albo przyciski **Do Ziemi** / **Cała Galaktyka** |
-| Gdzie jest Ziemia? | po prawej (podpis „Ziemia – tu jesteśmy”); małe Słońce mijasz z lewej strony |
-| Obrót Galaktyki | **gałka w lewo/prawo** |
-| **Prędkość lotu** | **suwak** w menu (przeciągnij promieniem) |
-
-### Tryb 8 – Grawitacja
+### Tryb 7 – Grawitacja
 
 | Akcja | Jak |
 |---|---|
@@ -183,7 +168,7 @@ Napis pod obiektami podaje skalę, np. „1 m w goglach = 2,9 m naprawdę”.
 | **Wejdź do środka siatki** | przycisk w menu (na PC: **I**); **gałka lewo/prawo** obraca siatkę wokół Ciebie |
 | **Sondy-bliźniaki** | przycisk w menu (na PC: **B**); chwyć sondę i przenieś; „Wyzeruj wiek sond” zaczyna porównanie od nowa |
 
-### Tryb 9 – Światło
+### Tryb 8 – Światło
 
 | Akcja | Jak |
 |---|---|
@@ -191,14 +176,7 @@ Napis pod obiektami podaje skalę, np. „1 m w goglach = 2,9 m naprawdę”.
 | Zegary | „Wyzeruj zegary”, „Pauza” (na PC: **R**, **spacja**) |
 | **Widok z pokładu** | przycisk w menu (na PC: **W**); prędkość tymi samymi przyciskami (0 c = postój, do porównania) |
 
-### Tryb 10 – Podróż
-
-| Akcja | Jak |
-|---|---|
-| Od człowieka do kosmosu i z powrotem | **gałka** góra/dół, oba spusty i rozsuwanie dłoni, albo przyciski **◀ Cały kosmos** / **Człowiek ▶** |
-| Prędkość | **suwak** w menu |
-
-### Tryb 11 – Atom
+### Tryb 9 – Atom
 
 | Akcja | Jak |
 |---|---|
@@ -207,7 +185,7 @@ Napis pod obiektami podaje skalę, np. „1 m w goglach = 2,9 m naprawdę”.
 | Obracaj / powiększ | **spust** na atomie i obracaj dłonią; **gałka** lewo/prawo = obrót, góra/dół = powiększenie; dwie ręce |
 | Model Bohra / chmury | przycisk w menu (na PC: **B**) |
 
-### Tryb 12 – Historia atomu
+### Tryb 10 – Historia atomu
 
 | Akcja | Jak |
 |---|---|
@@ -236,10 +214,10 @@ Na panelu menu widać skalę i **FPS** (cel: 72).
    Skróty na PC: **M** = pokaż/schowaj menu; Tryb 1 – **podwójny klik** na planecie = przelot, **+ / −** = zoom układu;
    Tryby 2 i 4 – **C** = przetnij obiekt pod kursorem, **G** = sklej, **T** = rzuć obiekt pod kursorem;
    Tryb 6 – **+ / −** = zoom, **N / P** = następny/poprzedni obiekt, **[ / ]** = prędkość;
-   Tryb 7 – **[ / ]** = prędkość lotu; Tryb 3 – **L** = kamera za ludzikiem (potem klik w ludzika), **+ / −** = przybliż, **strzałki** = obrót planety;
-   Tryb 8 – **S** = siatka 3D / płachta 2D, **I** = do środka, **B** = sondy, **R** = wyzeruj wiek;
+   Tryb 3 – **L** = kamera za ludzikiem (potem klik w ludzika), **+ / −** = przybliż, **strzałki** = obrót planety;
+   Tryb 7 – **S** = siatka 3D / płachta 2D, **I** = do środka, **B** = sondy, **R** = wyzeruj wiek;
    Tryb 2 – **V** = stań na planecie pod kursorem / wróć; Tryb 3 – **1–5** = scenariusze, **T** = następna temperatura;
-   Tryb 6 – klik w obiekt + **strzałki** = obrót wokół niego; Tryb 9 – **1–5** = prędkość, **R**, **spacja**;
+   Tryb 6 – klik w obiekt + **strzałki** = obrót wokół niego; Tryb 8 – **1–5** = prędkość, **R**, **spacja**;
    Tryb 1 – **spacja** = pauza, **, / .** = wolniej/szybciej; Tryb 5 – **+ / −** = zoom.
    > Nie otwieraj `index.html` podwójnym kliknięciem: przeglądarka zablokuje moduły JavaScript, bo plik nie idzie przez serwer.
 5. *(Opcjonalnie)* Żeby przetestować VR na PC, zainstaluj w Chrome rozszerzenie
@@ -291,18 +269,18 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 | `KNIFE_*`, `CUT_*`, `LAYERS` | nóż, przekrój i warstwy wnętrza każdego ciała |
 | `MODE3_*` | Tryb 3: średnica planety, liczba/wzrost/prędkość ludzików, kolory |
 | `OBJECTS`, `MODE4_*`, `PULSAR_*`, `BLACK_HOLE_*` | Tryb 4: lista obiektów, rozmiary, animacje |
-| `GALAXY_*`, `WEB_*`, `WEB3D_*`, `MODE5_*` | Tryb 5: galaktyki wokół, tło, trójwymiarowy fragment sieci, zakres zoomu |
+| `GALAXY_*`, `WEB_*`, `WEB3D_*`, `MODE5_*` | Tryb 5 (Podróż), etap kosmosu: galaktyki, tło, trójwymiarowy fragment sieci, najmocniejsze oddalenie |
 | `MODE3_BEHAVIOR`, `MODE3_CLOUD_*`, `MODE3_MINI_COSMOS`, `MODE3_YEAR_S` | Tryb 3: czynności ludzików (szanse, czasy), chmurki, Słońce i planetki w tle, długość „roku” |
 | `MODE3_VILLAGES`, `MODE3_HOUSES_PER_VILLAGE`, `MODE3_HOME_SHARE`, `MODE3_VOLCANO`, `MODE3_STORM`, `MODE3_MOON` | Tryb 3: wioski z domkami, wulkan, burza, księżyc i satelita (`false` = wyłącz) |
 | `MODE3_FOLLOW_SCALE`, `MODE3_FOLLOW_DISTANCE_M`, `MODE3_FOLLOW_DROP_M` | Tryb 3: kamera za ludzikiem (powiększenie, odległość ludzika od Ciebie) |
 | `MODE3_PLANET_DETAIL`, `MODE3_SEA_LEVEL`, `MODE3_MOUNTAIN_HEIGHT`, `MODE3_TREE_COUNT` | Tryb 3: wygląd planety generowanej w kodzie (`MODE3_USE_MODEL_PLANET_FILE = true` – planeta z pliku) |
-| `MW_*` | Tryb 7: liczba gwiazd, rozmiar na starcie, pochylenie, prędkość zoomu (`MW_SPEED_MIN/MAX` – zakres suwaka), `MW_TO_EARTH_FROM/TO` – kiedy punkt zoomu przesuwa się ze Słońca do Ziemi, `MW_NEAR_*` – gwiazdy sąsiedztwa, `MW_SKY_M` – sfera nieba |
+| `MW_*` | Tryb 5 (Podróż), etap Galaktyki: liczba gwiazd, pochylenie, prędkość zoomu (`MW_SPEED_MIN/MAX` – zakres suwaka), `MW_STAR_DENSITY` – gęstość gwiazd, `MW_NEAR_REAL_LY` – do jakiej odległości prawdziwa, `MW_NEAR_VIEW` – ile gwiazd w zasięgu wzroku przy oddaleniu, `MW_SKY_M` – sfera nieba, `MW_ECLIPTIC_TILT_DEG` – nachylenie orbit do dysku Galaktyki |
 | `MODE3_ORBIT_RADIUS_M`, `MODE3_SUN_RADIUS_M`, `MODE3_YEAR_S` | Tryb 3: jak daleko jest Słońce, jak duże, ile trwa rok planety |
-| `ST_*` | Tryb 8: rozmiar i gęstość siatki, jasność linii, wysokość płachty, okres orbity Ziemi, siatka „w środku” (`ST_INSIDE_SCALE`), sondy (`ST_YEARS_PER_S`, `ST_TIME_EFFECT`) |
+| `ST_*` | Tryb 7: rozmiar i gęstość siatki, jasność linii, wysokość płachty, okres orbity Ziemi, siatka „w środku” (`ST_INSIDE_SCALE`), sondy (`ST_YEARS_PER_S`, `ST_TIME_EFFECT`) |
 | `GALLERY_*`, `SURFACE_*` | Tryb 2: galeria miniatur (odległość, odstępy, rozmiar), widok z powierzchni |
-| `J_SCALE_START_M` | Tryb 10: skala na starcie (1 = człowiek w prawdziwej wielkości) |
-| `HIST_POINTS`, `HIST_BRIGHTNESS`, `HIST_SPEEDS`, `HIST_DISTANCE_M` | Tryb 12 (w sekcji Trybu 12): liczba i jasność punktów, tempa, odległość sceny; długość rozdziałów – pole `dur` w tablicy `HIST` |
-| `SR_*` | Tryb 9: „prędkość światła” w goglach, długość toru i statku, wysokość zegara świetlnego, prędkości do wyboru |
+| `J_SCALE_START_M`, `J_ATMOSPHERE_KM`, `J_SUN_ELEVATION_DEG` | Tryb 5: skala na starcie (1 = człowiek w prawdziwej wielkości), grubość atmosfery, wysokość Słońca nad człowiekiem |
+| `HIST_POINTS`, `HIST_BRIGHTNESS`, `HIST_SPEEDS`, `HIST_DISTANCE_M` | Tryb 10 (w sekcji Trybu 10): liczba i jasność punktów, tempa, odległość sceny; długość rozdziałów – pole `dur` w tablicy `HIST` |
+| `SR_*` | Tryb 8: „prędkość światła” w goglach, długość toru i statku, wysokość zegara świetlnego, prędkości do wyboru |
 | `MODEL_FILES`, `PERSON_*` | pliki modeli 3D; nazwa animacji chodu i obrót modelu ludzika |
 | `SCALE_*`, `SCALE_OBJECTS` | Tryb 6: lista obiektów (rozmiar, opis), progi znikania, prędkość zoomu |
 | `MENU_*` | panel menu: rozmiar, odległość, położenie zakładki schowanego menu |
@@ -330,7 +308,7 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
   Tabliczka podaje głębokość każdej warstwy w km.
 - **Rzucanie:** z ruchu obiektu w ostatnich 0,1 s liczona jest prędkość i obrót. Potem prędkość maleje
   wykładniczo (`THROW_DRAG`), co daje wrażenie gęstej cieczy bez grawitacji.
-- **Kosmos (Tryb 5):** galaktyki to obrazki narysowane w kodzie, po 1 wywołaniu rysowania na rodzaj (spiralne,
+- **Kosmos (koniec Podróży):** galaktyki to obrazki narysowane w kodzie, po 1 wywołaniu rysowania na rodzaj (spiralne,
   z poprzeczką, eliptyczne, nieregularne). Tło to jedna kula z teksturą 4096×2048. Sieć kosmiczna (90 gromad,
   ~90 000 punktów) jest wygenerowana w 3D i raz „sfotografowana” na niebo przy starcie, więc w goglach to tylko
   obrazek i nic nie kosztuje.
@@ -351,12 +329,15 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
   (plaża, łąka, las, skały, śnieg), poniżej poziomu morza jest ocean. Wysokość gruntu pod ludzikami liczy się
   wprost z tego samego wzoru. Machanie, kucanie i gestykulacja przy rozmowie to obroty kości szkieletu Mixamo
   dokładane do animacji stania (plik nie ma takich animacji).
-- **Tryb 7:** każda warstwa (Galaktyka, sąsiedztwo Słońca, Układ Słoneczny z Ziemią) ma własną skalę i jest ustawiona tak,
-  żeby punkt zoomu (Słońce, a po przelocie Ziemia) był przed Tobą, więc liczby zmiennoprzecinkowe nie tracą dokładności
-  przy zoomie ×10¹³. Gwiazdy dalej niż 3 km (w goglach) shader rysuje na sferze nieba w tym samym kierunku – stąd pas
-  Drogi Mlecznej z bliska Ziemi. Gwiazdy sąsiedztwa mają „rangę”: przy przybliżaniu pokazuje się ich coraz więcej,
-  a brzeg obszaru jest rozmyty, więc ich gęstość płynnie przechodzi w gęstość reszty Galaktyki.
-- **Tryb 8:** linie siatki są wyginane w shaderze wierzchołków (do 6 mas naraz): w 3D punkty przestrzeni są
+- **Podróż (Tryb 5):** każda warstwa (Galaktyka, sąsiedztwo Słońca, Układ Słoneczny, Ziemia, grunt w metrach) ma
+  własną skalę i jest ustawiona względem punktu zoomu, więc liczby zmiennoprzecinkowe nie tracą dokładności przy
+  zoomie ×10²⁴. Gwiazdy dalej niż 3 km (w goglach) shader rysuje na sferze nieba w tym samym kierunku – stąd pas Drogi
+  Mlecznej z bliska Ziemi. Niebo liczy shader powłoki atmosfery: wzdłuż promienia wzroku sumuje światło rozproszone
+  w powietrzu (rozpraszanie Rayleigha, gęstość malejąca wykładniczo z wysokością); odległości liczone są względem
+  środka Ziemi z wartości podanych w podwójnej precyzji, więc działa to i przy 1 m = 1 m, i z kosmosu. Tekstura gruntu
+  jest przy pierwszym wejściu wycinana z tekstury kuli Ziemi (dla każdego piksela szukany jest trójkąt kuli
+  w danym kierunku), a miejsce człowieka wybierane tak, żeby wokół był ląd.
+- **Tryb 7:** linie siatki są wyginane w shaderze wierzchołków (do 6 mas naraz): w 3D punkty przestrzeni są
   ściągane w stronę mas, na płachcie głębokość lejka to potencjał grawitacyjny; fale grawitacyjne to dwuramienna
   spirala rozchodząca się od pary czarnych dziur.
 - **Ludziki na planecie z modelu (opcjonalnie):** trójkąty planety są posortowane w siatkę 128 × 64 kierunków, więc „promień od
