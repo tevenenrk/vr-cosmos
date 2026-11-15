@@ -3,7 +3,7 @@
 Interaktywny Układ Słoneczny w goglach VR, działający w przeglądarce **Meta Quest Browser**.
 Nie trzeba nic instalować w goglach: wystarczy otworzyć stronę i kliknąć **ENTER VR**.
 
-Jedenaście trybów (przełączane na panelu menu):
+Dwanaście trybów (przełączane na panelu menu):
 
 - **Tryb 1 – Model:** cały układ do orbity Plutona w prawdziwej skali, z księżycami i pierścieniami.
   Planety krążą po eliptycznych orbitach (prawa Keplera) i obracają się wokół osi, księżyce krążą wokół planet.
@@ -79,6 +79,14 @@ Jedenaście trybów (przełączane na panelu menu):
   atomu wodoru); kolor = znak funkcji falowej. Pierwiastki H, He, Li, C, O, Ne, Na – zajęte orbitale wg
   konfiguracji (kolor = powłoka). Biały błysk pokazuje, gdzie „zmierzylibyśmy” elektron w danej chwili.
   Dla porównania stary model Bohra (elektrony na torach jak planety).
+- **Tryb 12 – Historia atomu:** animacja przed Tobą (kamera stoi w miejscu): 13,8 mld lat jednego protonu –
+  od Wielkiego Wybuchu do Twojego ciała, w 16 rozdziałach. Kwarki łączą się w proton → pierwsze minuty (hel) →
+  pierwsze atomy (wodór, promieniowanie tła) → ciemne wieki → pierwsza gwiazda → fuzja: hel, a potem węgiel
+  (nasz proton staje się jednym z 6 protonów węgla) → supernowa → miliardy lat w Galaktyce → kolejna gwiazda
+  (czerwony olbrzym, mgławica planetarna) → narodziny Słońca → Ziemia i Księżyc (CO₂ z wulkanu) → pierwsze
+  komórki przy kominach na dnie oceanu → wapień, płyty i wulkany (obieg węgla) → paproć i dinozaur → pszenica
+  i chleb → Ty (białko mięśnia). Nasz atom świeci złotem i zostawia ślad; tablica pod sceną mówi, kiedy to jest,
+  czym atom akurat jest i co się dzieje. Oś czasu w menu przewija historię, a tempo zmienisz od ×¼ do ×4.
 
 Ziemia we wszystkich trybach to model 3D z teksturą (`models/earth.glb`).
 
@@ -199,6 +207,16 @@ Napis pod obiektami podaje skalę, np. „1 m w goglach = 2,9 m naprawdę”.
 | Obracaj / powiększ | **spust** na atomie i obracaj dłonią; **gałka** lewo/prawo = obrót, góra/dół = powiększenie; dwie ręce |
 | Model Bohra / chmury | przycisk w menu (na PC: **B**) |
 
+### Tryb 12 – Historia atomu
+
+| Akcja | Jak |
+|---|---|
+| Przewijanie czasu | **oś czasu** w menu (spust i przeciągnij) albo **prawa gałka** lewo/prawo |
+| Pauza / start | przycisk w menu albo **A** (na PC: **spacja**) |
+| Rozdział wstecz / dalej | przyciski **◀◀ Poprzedni** / **Następny ▶▶**, **B** = dalej (na PC: **← →**) |
+| Tempo | przyciski ×¼, ×½, ×1, ×2, ×4 (na PC: **,** i **.**) |
+| Obróć / przesuń scenę | **spust** na scenie i obracaj dłonią |
+
 Na panelu menu widać skalę i **FPS** (cel: 72).
 
 ---
@@ -283,6 +301,7 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 | `ST_*` | Tryb 8: rozmiar i gęstość siatki, jasność linii, wysokość płachty, okres orbity Ziemi, siatka „w środku” (`ST_INSIDE_SCALE`), sondy (`ST_YEARS_PER_S`, `ST_TIME_EFFECT`) |
 | `GALLERY_*`, `SURFACE_*` | Tryb 2: galeria miniatur (odległość, odstępy, rozmiar), widok z powierzchni |
 | `J_SCALE_START_M` | Tryb 10: skala na starcie (1 = człowiek w prawdziwej wielkości) |
+| `HIST_POINTS`, `HIST_BRIGHTNESS`, `HIST_SPEEDS`, `HIST_DISTANCE_M` | Tryb 12 (w sekcji Trybu 12): liczba i jasność punktów, tempa, odległość sceny; długość rozdziałów – pole `dur` w tablicy `HIST` |
 | `SR_*` | Tryb 9: „prędkość światła” w goglach, długość toru i statku, wysokość zegara świetlnego, prędkości do wyboru |
 | `MODEL_FILES`, `PERSON_*` | pliki modeli 3D; nazwa animacji chodu i obrót modelu ludzika |
 | `SCALE_*`, `SCALE_OBJECTS` | Tryb 6: lista obiektów (rozmiar, opis), progi znikania, prędkość zoomu |

@@ -7129,16 +7129,909 @@ function stickAtom(ctrl, dt) {
 }
 
 // =====================================================================
+//  TRYB 12: HISTORIA ATOMU – od Wielkiego Wybuchu do Twojego ciała
+//   Animacja na „scenie” przed Tobą (kamera się nie rusza). Suwak przewija czas, przyciski zmieniają tempo.
+//   Bohater: jeden proton. Powstaje w pierwszej milionowej sekundy, w gwieździe staje się częścią jądra węgla,
+//   a węgiel krąży przez gwiazdy, dysk wokół młodego Słońca, Ziemię, organizmy – aż do Ciebie.
+// =====================================================================
+const mode12Group = new THREE.Group();
+mode12Group.visible = false;
+scene.add(mode12Group);
+const mode12Light = makeHeadlight(mode12Group);
+const HIST_POINTS = 5000;                                  // ile punktów ma chmura (gaz, pył, cząstki)
+const HIST_BRIGHTNESS = 0.6;                               // jasność chmury punktów
+const HIST_SPEEDS = [0.25, 0.5, 1, 2, 4];                  // tempo animacji (×1 = ok. 4 minuty całości)
+const HIST_DISTANCE_M = 1.25;                              // odległość sceny od oczu
+const HIST_GRAB = { minScale: 0.4, maxScale: 3, oneHand: 'remote' };
+state.hist = { p: 0, playing: true, speed: 1, menuT: 0, idx: -1 };
+const hSm = THREE.MathUtils.smoothstep;                    // hSm(x, od, do): płynnie 0 → 1
+const hMix = (a, b, f) => a + (b - a) * f;
+const _hv = new THREE.Vector3(), _hw = new THREE.Vector3(), _hu = new THREE.Vector3();
+function hSph(a, b, out) { const u = 2 * a - 1, ph = 2 * Math.PI * b, s = Math.sqrt(Math.max(0, 1 - u * u)); return out.set(s * Math.cos(ph), u, s * Math.sin(ph)); }
+// punkt na łamanej z kluczami [[t, x, y, z], ...] (płynnie między kluczami)
+function hPath(keys, t, out) {
+  if (t <= keys[0][0]) return out.set(keys[0][1], keys[0][2], keys[0][3]);
+  for (let i = 1; i < keys.length; i++) {
+    if (t <= keys[i][0]) {
+      const a = keys[i - 1], b = keys[i], f = hSm(t, a[0], b[0]);
+      return out.set(hMix(a[1], b[1], f), hMix(a[2], b[2], f), hMix(a[3], b[3], f));
+    }
+  }
+  const z = keys[keys.length - 1];
+  return out.set(z[1], z[2], z[3]);
+}
+// pochylenie płaszczyzny (dysk, galaktyka): dalsza strona do góry, żeby było widać ją z góry
+function hTilt(o, a) { const c = Math.cos(a), s = Math.sin(a), y = o.y, z = o.z; o.y = y * c - z * s; o.z = y * s + z * c; return o; }
+const hBasic = (color, opts = {}) => new THREE.MeshBasicMaterial({ color, ...opts });
+const hBall = (mat, r, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(sphereGeometry, mat); m.scale.setScalar(r); m.position.set(x, y, z); return m; };
+const hOnTop = m => { m.material.depthTest = false; m.material.transparent = true; m.renderOrder = 13; return m; };
+const histExpand = t => 0.1 + 0.45 * (1 - Math.exp(-2.5 * t)) / (1 - Math.exp(-2.5));
+
+// tablica opisu: kilka linijek, tekst sam się zmniejsza, gdy jest za długi
+function makeFitBoard(width, lines) {
+  const H = 62 * lines + 30;
+  const [canvas, ctx] = makeCanvas(width, H);
+  const tex = canvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  sprite.center.set(0.5, 1);                                 // zaczepienie u góry
+  sprite.userData.aspect = width / H;
+  sprite.renderOrder = 11;
+  let last = '';
+  return {
+    sprite,
+    setText(list, colors = []) {
+      const key = list.join('|');
+      if (key === last) return;
+      last = key;
+      ctx.clearRect(0, 0, width, H);
+      ctx.fillStyle = 'rgba(6,10,26,0.8)'; roundRect(ctx, 0, 0, width, H, 30); ctx.fill();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      list.forEach((t, i) => {
+        let size = i === 0 ? 50 : 41;
+        const font = () => `${i < 2 ? 'bold ' : ''}${size}px system-ui, sans-serif`;
+        ctx.font = font();
+        while (size > 22 && ctx.measureText(t).width > width - 50) { size -= 2; ctx.font = font(); }
+        ctx.fillStyle = colors[i] || '#ffffff';
+        ctx.fillText(t, width / 2, 15 + 62 * i + 33);
+      });
+      tex.needsUpdate = true;
+    },
+  };
+}
+
+const hist = (() => {
+  const root = new THREE.Group();                            // środek sceny; lokalne +z = w stronę widza
+  mode12Group.add(root);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(HIST_POINTS * 3), 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(HIST_POINTS * 3), 3));
+  const cloud = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.024, map: glowTexture, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  cloud.frustumCulled = false;
+  root.add(cloud);
+  const seeds = new Float32Array(HIST_POINTS * 4);
+  for (let i = 0; i < seeds.length; i++) seeds[i] = Math.random();
+  const fog = makeGlowSprite(0xffa060, 1.7, 0);              // „mgła” gorącego Wszechświata / wnętrze gwiazdy
+  fog.position.set(0, 0, -0.35);
+  root.add(fog);
+  // znacznik naszego atomu – zawsze widoczny (rysowany na wierzchu)
+  const marker = new THREE.Group();
+  root.add(marker);
+  const core = hOnTop(hBall(hBasic(0xfff2a8), 0.009));
+  const glow = makeGlowSprite(0xffc040, 0.1, 0.9);
+  glow.material.depthTest = false; glow.renderOrder = 13;
+  marker.add(core, glow);
+  const ring = new THREE.Group();                            // powłoki elektronowe (gdy atom ma elektrony)
+  ring.rotation.set(1.15, 0, 0.3);
+  marker.add(ring);
+  const shells = [0.024, 0.04].map(r => { const l = makeCircleLineXZ(r, 48, 0x8fc8ff, 0.7); l.material.depthTest = false; l.renderOrder = 13; ring.add(l); return l; });
+  const eMat = hBasic(0x9fd4ff);
+  const electrons = [];
+  for (let i = 0; i < 6; i++) { const e = hOnTop(hBall(eMat, 0.0045)); ring.add(e); electrons.push(e); }
+  const co2 = new THREE.Group();                             // dwa atomy tlenu – cząsteczka CO₂
+  marker.add(co2);
+  const oMat = hBasic(0xff5a48);
+  for (const s of [-1, 1]) co2.add(hOnTop(hBall(oMat, 0.0078, s * 0.019, 0, 0)));
+  const label = makeLabel('Twój atom');
+  label.material.depthTest = false; label.renderOrder = 14;
+  mode12Group.add(label);
+  // ślad: skąd atom przyleciał
+  const TRAIL = 140;
+  const tGeo = new THREE.BufferGeometry();
+  tGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL * 3), 3));
+  tGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL * 3), 3));
+  const trail = new THREE.Line(tGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
+  trail.frustumCulled = false; trail.renderOrder = 12;
+  root.add(trail);
+  const board = makeFitBoard(2100, 5);
+  board.sprite.material.depthTest = false;                   // zawsze na wierzchu (nie chowa się za podłogą sceny)
+  mode12Group.add(board.sprite);
+  return { root, cloud, geo, seeds, fog, marker, glow, ring, shells, electrons, co2, label, trail, tGeo, TRAIL, tPts: [], board, clock: 0 };
+})();
+const histCtx = { pos: new THREE.Vector3(), name: '', e: 0, co2: false, when: '', text: [], fog: 0, fogColor: 0xffa060 };
+const _ho = { x: 0, y: 0, z: 0, r: 0, g: 0, b: 0 };
+const HIST_TET = [V(1, 1, 1), V(1, -1, -1), V(-1, 1, -1), V(-1, -1, 1)].map(v => v.multiplyScalar(0.0105));
+const HIST_DM = [V(0.15, 0.05, 0), V(-0.3, 0.15, -0.1), V(-0.15, -0.25, 0.15), V(0.35, -0.2, -0.2), V(0.05, 0.3, -0.25), V(-0.4, -0.1, 0.25)];
+function histBase1(S, k, T, out) {                          // pozycja cząstki w gorącej zupie (Rozdział 2)
+  hSph(S[k], S[k + 1], out).multiplyScalar(Math.cbrt(S[k + 2]) * 0.5);
+  out.x += 0.012 * Math.sin(T * 5 + S[k + 3] * 50); out.y += 0.012 * Math.sin(T * 6 + S[k] * 50); out.z += 0.012 * Math.cos(T * 5.5 + S[k + 1] * 50);
+  return out;
+}
+const hRGB = (o, r, g, b, k = 1) => { o.r = r * k; o.g = g * k; o.b = b * k; };
+
+// --- modele do scen: paproć, dinozaur ---
+function makeHistFern() {
+  const g = new THREE.Group(), leafMat = stdMat(0x3f8f3a, { side: THREE.DoubleSide }), stem = stdMat(0x4a6a2a);
+  const leafGeos = [];
+  for (let f = 0; f < 8; f++) {
+    const a = f * Math.PI * 2 / 8 + 0.2, ca = Math.cos(a), sa = Math.sin(a);
+    const curve = new THREE.QuadraticBezierCurve3(V(0, 0, 0), V(ca * 0.1, 0.3, sa * 0.1), V(ca * 0.28, 0.18, sa * 0.28));
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 16, 0.004, 4), stem));
+    if (f === 0) g.userData.leaf = curve.getPoint(0.62);
+    const side = V(-sa, 0, ca);
+    for (let s = 0.15; s < 0.97; s += 0.06) {
+      const p = curve.getPoint(s), tan = curve.getTangent(s), len = 0.05 * (1 - s * 0.7);
+      for (const sg of [-1, 1]) {
+        const x = side.clone().multiplyScalar(sg), z = new THREE.Vector3().crossVectors(x, tan).normalize();
+        const m = new THREE.Matrix4().makeBasis(x, tan, z).setPosition(p.clone().addScaledVector(x, len / 2).addScaledVector(UP, -len * 0.15));
+        leafGeos.push(new THREE.PlaneGeometry(len, 0.012).applyMatrix4(m));
+      }
+    }
+  }
+  g.add(mergedMesh(leafGeos, leafMat));
+  return g;
+}
+function makeHistDino() {                                    // roślinożerca z długą szyją (głowa w stronę −x)
+  const g = new THREE.Group(), skin = stdMat(0x6f8f4a, { roughness: 0.8 }), dark = hBasic(0x111111);
+  g.add(ellipsoid(skin, 0.15, 0.085, 0.08, 0, 0.17, 0));
+  g.add(beam(V(0.12, 0.19, 0), V(0.25, 0.14, 0), 0.04, skin, 8), beam(V(0.25, 0.14, 0), V(0.38, 0.08, 0), 0.022, skin, 8));
+  const legs = [];
+  for (const [x, z] of [[-0.08, 0.05], [-0.08, -0.05], [0.08, 0.05], [0.08, -0.05]]) {
+    const leg = new THREE.Group();
+    leg.position.set(x, 0.14, z);
+    leg.add(beam(V(0, 0, 0), V(0, -0.14, 0), 0.025, skin, 8));
+    g.add(leg); legs.push(leg);
+  }
+  const neck = new THREE.Group();
+  neck.position.set(-0.11, 0.2, 0);
+  g.add(neck);
+  neck.add(beam(V(0, 0, 0), V(-0.12, 0.15, 0), 0.026, skin, 8));
+  const head = ellipsoid(skin, 0.045, 0.028, 0.03, -0.14, 0.16, 0);
+  neck.add(head);
+  for (const s of [-1, 1]) neck.add(hBall(dark, 0.006, -0.16, 0.175, s * 0.024));
+  g.userData = { neck, head, legs };
+  return g;
+}
+
+// --- rozdziały: build(g) – raz, przy pierwszym pokazaniu; update(t, g, A, T, dt) – co klatkę (t = 0…1 w rozdziale);
+//     cloud(i, S, k, t, o, T) – położenie i kolor punktu i (S[k..k+3] – jego stałe liczby losowe) ---
+const HIST = [
+  {
+    title: 'Wielki Wybuch', dur: 14,
+    build(g) { this.q = [0xff4a4a, 0x4aff6a, 0x5a8aff].map(c => { const m = hBall(hBasic(c), 0.011); g.add(m); return m; }); },
+    update(t, g, A, T) {
+      A.pos.set(0.13, 0.05, 0.12).multiplyScalar(histExpand(t) / 0.55);
+      const r = 0.012 + 0.05 * (1 - hSm(t, 0.3, 0.6));
+      this.q.forEach((m, k) => {
+        const a = T * 3 + k * 2.094;
+        m.position.set(A.pos.x + Math.cos(a) * r, A.pos.y + Math.sin(a * 0.7) * r * 0.5, A.pos.z + Math.sin(a) * r);
+        m.visible = t < 0.6;
+      });
+      A.fog = 0.55 * (1 - 0.4 * t); A.fogColor = 0xffe0b0;
+      A.name = t < 0.6 ? 'jeszcze go nie ma – są 3 kwarki' : 'proton';
+      A.when = t < 0.5 ? '13,8 mld lat temu – pierwsze ułamki sekundy' : 'ok. 1 milionowa sekundy po Wielkim Wybuchu';
+      A.text = ['Wszechświat jest niewyobrażalnie gorący i gęsty – i rozszerza się wszędzie naraz', '(nie wybucha z jednego punktu jak bomba). Na razie są tylko kwarki, elektrony i światło.',
+        t > 0.55 ? 'Trzy kwarki (2 „górne” i 1 „dolny”) łączą się w proton – to nasz bohater!' : 'Kolorowe kulki to trzy kwarki – za chwilę się połączą.'];
+    },
+    cloud(i, S, k, t, o, T) {
+      const a = histExpand(t), r = Math.cbrt(S[k + 2]) * a, j = 0.012 * (1 - 0.6 * t);
+      hSph(S[k], S[k + 1], _hv);
+      o.x = _hv.x * r + j * Math.sin(T * 9 + S[k + 3] * 40); o.y = _hv.y * r + j * Math.sin(T * 11 + S[k] * 40); o.z = _hv.z * r + j * Math.cos(T * 10 + S[k + 1] * 40);
+      const q = hSm(t, 0.4, 0.65), br = 0.7 - 0.4 * t, m = i % 3;
+      o.r = hMix(m === 0 ? 1 : 0.35, 1, q) * br; o.g = hMix(m === 1 ? 1 : 0.35, 0.9 - 0.35 * t, q) * br; o.b = hMix(m === 2 ? 1 : 0.4, 0.75 - 0.55 * t, q) * br;
+    },
+  },
+  {
+    title: 'Pierwsze minuty: jądra helu', dur: 14,
+    update(t, g, A, T) {
+      A.pos.set(0.14 * Math.cos(t * 2.5) + 0.01 * Math.sin(T * 6), 0.06 * Math.sin(t * 4), 0.14 * Math.sin(t * 2.5) + 0.06);
+      A.fog = 0.45; A.fogColor = 0xff9a50;
+      A.name = 'proton (czyli jądro wodoru)';
+      A.when = 'od 1 sekundy do ok. 20 minut po Wielkim Wybuchu';
+      A.text = ['Jest goręcej niż we wnętrzu Słońca. Protony (czerwone) i neutrony (szare) zderzają się', 'i sklejają w jądra helu: 2 protony + 2 neutrony. Po ok. 20 minutach jest już za zimno.',
+        'Ok. 1/4 masy staje się helem, reszta zostaje pojedynczymi protonami – nasz też.'];
+    },
+    cloud(i, S, k, t, o, T) {
+      const g4 = (i >> 2) * 16;
+      histBase1(S, k, T, _hv);
+      let red = true;
+      if (S[g4 + 3] < 0.25) {                               // ta czwórka zlepia się w jądro helu
+        histBase1(S, g4, T, _hw).add(HIST_TET[i & 3]);
+        _hv.lerp(_hw, hSm(t, 0.1 + S[g4 + 2] * 0.5, 0.2 + S[g4 + 2] * 0.5));
+        red = (i & 3) < 2;
+      }
+      o.x = _hv.x; o.y = _hv.y; o.z = _hv.z;
+      if (red) hRGB(o, 0.95, 0.32, 0.28, 0.55); else hRGB(o, 0.72, 0.74, 0.8, 0.55);
+    },
+  },
+  {
+    title: 'Pierwsze atomy – Wszechświat staje się przezroczysty', dur: 13,
+    update(t, g, A, T) {
+      A.pos.set(0.12, 0.05, 0.1);
+      A.e = t > 0.5 ? 1 : 0;
+      A.fog = 0.55 * (1 - hSm(t, 0.35, 0.75)); A.fogColor = 0xff8a40;
+      A.name = t > 0.5 ? 'atom wodoru (H): proton + elektron' : 'proton';
+      A.when = '380 000 lat po Wielkim Wybuchu';
+      A.text = ['Wszechświat ostygł do ok. 3000°C. Światło nie wybija już elektronów (niebieskie)', 'i zostają one przy jądrach – powstają pierwsze atomy. Nasz proton łapie elektron.',
+        'Mgła znika, światło leci swobodnie – widzimy je do dziś jako mikrofalowe promieniowanie tła.'];
+    },
+    cloud(i, S, k, t, o, T) {
+      const nk = (i & ~1) * 4;
+      hSph(S[nk], S[nk + 1], _hw).multiplyScalar(Math.cbrt(S[nk + 2]) * 0.52);
+      if ((i & 1) === 0) { o.x = _hw.x; o.y = _hw.y; o.z = _hw.z; hRGB(o, 0.95, 0.35, 0.3, 0.5); return; }
+      const f = hSm(t, 0.3 + 0.3 * S[k + 3], 0.36 + 0.3 * S[k + 3]);
+      const fr = 0.08 * (1 - f) + 0.011 * f, w = hMix(9, 5, f), a1 = T * w + S[k] * 30, a2 = T * w * 0.77 + S[k + 1] * 30;
+      o.x = _hw.x + Math.cos(a1) * fr; o.y = _hw.y + Math.sin(a2) * fr * (1 - 0.6 * f); o.z = _hw.z + Math.sin(a1) * fr;
+      hRGB(o, 0.35, 0.6, 1, 0.6);
+    },
+  },
+  {
+    title: 'Ciemne wieki', dur: 13,
+    build(g) { this.halos = HIST_DM.map(c => { const s = makeGlowSprite(0x8a5aff, 0.32, 0); s.position.copy(c); g.add(s); return s; }); },
+    update(t, g, A) {
+      for (const s of this.halos) s.material.opacity = 0.3 * hSm(t, 0, 0.6);
+      A.pos.set(0.4, 0.2, 0.15).lerp(_hv.copy(HIST_DM[0]).add(_hw.set(0.03, 0.01, 0.02)), hSm(t, 0, 1));
+      A.e = 1;
+      A.name = 'atom wodoru (H)';
+      A.when = 'od 380 tys. do ok. 100 mln lat po Wielkim Wybuchu';
+      A.text = ['Nie świeci jeszcze żadna gwiazda – to „ciemne wieki” Wszechświata.', 'Grawitacja – głównie niewidzialnej ciemnej materii (fioletowe plamy) – zbiera gaz w grudki i nitki.',
+        'Nasz atom wodoru dryfuje razem z gazem do jednej z grudek.'];
+    },
+    cloud(i, S, k, t, o) {
+      const c = Math.min(5, Math.floor(S[k + 3] * 6)), C = HIST_DM[c];
+      if (i % 10 < 3) _hw.copy(C).lerp(HIST_DM[(c + 1) % 6], S[k]).add(_hu.set(S[k + 1] - 0.5, S[k + 2] - 0.5, S[k] - 0.5).multiplyScalar(0.04));
+      else hSph(S[k], S[k + 1], _hw).multiplyScalar(0.08 * Math.pow(S[k + 2], 1.5)).add(C);
+      _hv.set((S[k] - 0.5) * 1.1, (S[k + 1] - 0.5) * 0.75, (S[k + 2] - 0.5) * 0.75).lerp(_hw, 0.92 * hSm(t, 0, 1));
+      o.x = _hv.x; o.y = _hv.y; o.z = _hv.z;
+      hRGB(o, 0.45, 0.5, 0.68, 0.3 + 0.25 * t);
+    },
+  },
+  {
+    title: 'Pierwsza gwiazda', dur: 13,
+    build(g) {
+      this.star = hBall(hBasic(0xd8e6ff), 1); this.glow = makeGlowSprite(0x9fc0ff, 1, 0.9);
+      g.add(this.star, this.glow);
+    },
+    update(t, g, A) {
+      const s = hSm(t, 0.55, 0.8);
+      this.star.scale.setScalar(0.07 * s + 1e-4); this.star.visible = s > 0;
+      this.glow.scale.setScalar(0.7 * s + 1e-4);
+      const f = hSm(t, 0.05, 0.8), r = hMix(0.45, 0.0, f), ang = 0.7 + t * 2 * (0.45 / Math.max(r, 0.08));
+      A.pos.set(Math.cos(ang) * r, 0.3 * r * (1 - f * 0.7), Math.sin(ang) * r);
+      A.e = t < 0.75 ? 1 : 0;
+      A.name = t < 0.75 ? 'atom wodoru (H)' : 'proton (w gwieździe atomy tracą elektrony)';
+      A.when = 'ok. 100–200 mln lat po Wielkim Wybuchu (13,6 mld lat temu)';
+      A.text = ['Grudka gazu zapada się i kręci coraz szybciej – jak łyżwiarka, która przyciąga ręce.', 'W środku robi się tak gęsto i gorąco, że zaczyna się fuzja: zapala się jedna z pierwszych gwiazd,',
+        'ok. 100 razy cięższa od Słońca. Nasz atom wpada do jej środka.'];
+    },
+    cloud(i, S, k, t, o) {
+      hSph(S[k], S[k + 1], _hv);
+      const r0 = 0.12 + 0.43 * S[k + 2], f = hSm(t, S[k + 3] * 0.5, S[k + 3] * 0.5 + 0.4), r = hMix(r0, 0.015 + 0.05 * S[k + 2], f);
+      const ang = t * 2.5 * Math.pow(r0 / r, 0.8), c = Math.cos(ang), s = Math.sin(ang);
+      o.x = (_hv.x * c - _hv.z * s) * r; o.y = _hv.y * r * (1 - 0.75 * f); o.z = (_hv.x * s + _hv.z * c) * r;
+      const hot = f * (1 - Math.min(1, r / 0.25));
+      hRGB(o, hMix(0.35, 1, hot), hMix(0.45, 0.8, hot), hMix(0.75, 0.55, hot), 0.4 + 0.3 * hot);
+    },
+  },
+  {
+    title: 'W środku gwiazdy: z wodoru hel, z helu węgiel', dur: 18,
+    build(g) {
+      const matP = stdMat(0xe04030, { emissive: 0x401008 }), matN = stdMat(0xb0b0b8, { emissive: 0x202024 });
+      this.matN = matN;
+      this.balls = Array.from({ length: 12 }, (_, k) => { const m = hBall(k % 4 < 2 || k < 4 ? matP.clone() : matN, 0.03); g.add(m); return m; });
+      this.final = fibonacciDirs(12).sort((a, b) => b.z - a.z).map(d => d.multiplyScalar(0.062));
+      this.tet = HIST_TET.map(v => v.clone().multiplyScalar(2));
+      this.startA = [V(-0.3, 0.2, 0.1), V(0.3, 0.15, 0.05), V(0.1, -0.3, 0.1), V(-0.2, -0.2, -0.2)];
+      this.far = [V(0, 0, 0), V(-0.38, 0.18, -0.1), V(0.36, -0.16, -0.05)];
+      this.near = [V(0, 0.04, 0.024), V(-0.07, -0.02, -0.02), V(0.07, -0.024, -0.02)];
+      this.flash = makeGlowSprite(0xfff4c0, 0.3, 0); g.add(this.flash);
+    },
+    update(t, g, A, T) {
+      const merge = hSm(t, 0.74, 0.84);
+      for (let k = 0; k < 12; k++) {
+        const h = k >> 2, m = this.balls[k];
+        if (h === 0) {                                      // nasza czwórka: 4 protony → hel
+          const f = hSm(t, 0.04 * k, 0.25 + 0.02 * k);
+          _hv.copy(this.startA[k]).add(_hw.set(Math.sin(T * 7 + k), Math.cos(T * 6 + k * 2), Math.sin(T * 5 + k * 3)).multiplyScalar(0.01 * (1 - f)));
+          _hv.lerp(_hu.copy(this.tet[k]), f);
+          _hv.add(_hw.copy(this.near[0]).multiplyScalar(hSm(t, 0.45, 0.74)));
+          if (k >= 2) m.material = t > 0.27 + 0.02 * k ? this.matN : this.balls[0].material;
+          m.visible = true;
+        } else {                                            // dwa inne jądra helu przylatują
+          const f = hSm(t, 0.45, 0.74);
+          _hv.copy(this.far[h]).add(_hw.set(Math.sin(T * 4 + h), Math.cos(T * 3 + h), 0).multiplyScalar(0.015 * (1 - f))).lerp(this.near[h], f).add(this.tet[k & 3]);
+          m.visible = t > 0.42;
+        }
+        m.position.copy(_hv).lerp(this.final[k], merge);
+      }
+      const fl = Math.max(hSm(t, 0.25, 0.29) * (1 - hSm(t, 0.29, 0.36)), hSm(t, 0.76, 0.8) * (1 - hSm(t, 0.8, 0.9)));
+      this.flash.material.opacity = fl; this.flash.scale.setScalar(0.1 + 0.35 * fl);
+      A.pos.copy(this.balls[0].position);
+      A.fog = 0.38; A.fogColor = 0xffb070;
+      A.name = t < 0.3 ? 'proton' : t < 0.8 ? 'jądro helu (2 protony + 2 neutrony)' : 'jądro węgla (6 protonów + 6 neutronów)';
+      A.when = t < 0.42 ? 'w środku gwiazdy, przez ok. 2–3 mln lat' : 'pod koniec życia gwiazdy (ok. 100 mln °C)';
+      A.text = t < 0.42
+        ? ['Powiększenie: widzisz pojedyncze jądra atomów (naprawdę są bilion razy mniejsze od milimetra).', 'W ogromnej temperaturze 4 protony stapiają się w jądro helu – 2 z nich zamieniają się w neutrony.',
+          'Uwolniona przy tym energia sprawia, że gwiazda świeci.']
+        : ['Gdy wodór w środku się kończy, gwiazda kurczy się i grzeje jeszcze bardziej.', 'Wtedy trzy jądra helu łączą się w jedno jądro węgla.',
+          'Nasz proton jest teraz jednym z 6 protonów węgla – i zostanie nim aż do dziś!'];
+    },
+    cloud(i, S, k, t, o, T) {
+      if (i % 2) return;
+      hSph(S[k], S[k + 1], _hv).multiplyScalar(0.15 + 0.4 * Math.cbrt(S[k + 2]));
+      o.x = _hv.x + 0.03 * Math.sin(T * 6 + S[k + 3] * 40); o.y = _hv.y + 0.03 * Math.sin(T * 7 + S[k] * 40); o.z = _hv.z + 0.03 * Math.cos(T * 6.5 + S[k + 1] * 40);
+      hRGB(o, 1, 0.65, 0.35, 0.22);
+    },
+  },
+  {
+    title: 'Supernowa', dur: 13,
+    build(g) {
+      this.star = hBall(hBasic(0xcfe0ff), 1); this.glow = makeGlowSprite(0xa8c8ff, 1, 0.8);
+      this.flash = makeGlowSprite(0xffffff, 1, 0); this.rest = makeGlowSprite(0xa0d0ff, 0.05, 0.9);
+      g.add(this.star, this.glow, this.flash, this.rest);
+      this.dir = V(0.6, 0.35, 0.7).normalize();
+    },
+    update(t, g, A) {
+      const boom = 0.3, grow = hSm(t, 0, boom), col = new THREE.Color(0xcfe0ff).lerp(new THREE.Color(0xff7040), grow);
+      const R = t < boom ? hMix(0.12, 0.2, grow) : 0.2 * (1 - hSm(t, boom, boom + 0.03));
+      this.star.scale.setScalar(R + 1e-4); this.star.visible = R > 0.002; this.star.material.color.copy(col);
+      this.glow.scale.setScalar(3 * R + 1e-4); this.glow.material.color.copy(col);
+      const fl = hSm(t, boom, boom + 0.02) * (1 - hSm(t, boom + 0.03, 0.5));
+      this.flash.material.opacity = fl; this.flash.scale.setScalar(0.4 + 1.4 * fl);
+      this.rest.visible = t > boom + 0.04;
+      A.pos.copy(this.dir).multiplyScalar(t < boom ? 0.08 + 0.04 * grow : 0.12 + 0.38 * Math.pow(hSm(t, boom, 1), 0.7));
+      A.name = 'jądro węgla (C)';
+      A.when = 'kilka mln lat po narodzinach gwiazdy (ok. 13,5 mld lat temu)';
+      A.text = t < boom
+        ? ['Gwiazda zużywa paliwo i puchnie w ogromnego nadolbrzyma.', 'Tak ciężkie gwiazdy żyją krótko – zaledwie kilka milionów lat.', '']
+        : ['Środek gwiazdy zapada się w ułamku sekundy (zostaje gwiazda neutronowa albo czarna dziura),', 'a reszta zostaje wyrzucona w gigantycznym wybuchu – supernowej.', 'Nasz węgiel leci w kosmos z prędkością tysięcy kilometrów na sekundę.'];
+    },
+    cloud(i, S, k, t, o) {
+      if (t < 0.31) return;
+      const f = (t - 0.31) / 0.69, layer = S[k + 3];
+      hSph(S[k], S[k + 1], _hv);
+      const finger = 1 + 0.12 * Math.sin(_hv.x * 13 + _hv.y * 7) * Math.sin(_hv.z * 11 + _hv.x * 5);
+      const r = (0.04 + 0.55 * Math.pow(f, 0.6)) * (0.55 + 0.45 * layer) * finger;
+      o.x = _hv.x * r; o.y = _hv.y * r; o.z = _hv.z * r;
+      const b = 0.75 * (1 - 0.6 * f);
+      if (layer < 0.33) hRGB(o, 0.55, 0.65, 1, b);          // żelazo, krzem
+      else if (layer < 0.66) hRGB(o, 1, 0.85, 0.35, b);     // węgiel, tlen
+      else hRGB(o, 1, 0.35, 0.3, b);                        // wodór, hel
+    },
+  },
+  {
+    title: 'Miliardy lat wędrówki po Galaktyce', dur: 15,
+    update(t, g, A) {
+      const ang = 0.9 - t * 1.2;
+      A.pos.set(Math.cos(ang) * 0.3, 0, Math.sin(ang) * 0.3);
+      hTilt(A.pos, 0.6);
+      A.e = t > 0.08 ? 6 : 0;
+      A.name = t > 0.08 ? 'atom węgla (C) w ziarenku pyłu' : 'jądro węgla (C)';
+      A.when = 'od ok. 13 do 5 mld lat temu';
+      A.text = ['Węgiel stygnie i łapie 6 elektronów – jest już pełnym atomem. Przykleja się do ziarenka pyłu.', 'Przez miliardy lat krąży po Galaktyce (jedno okrążenie trwa ok. 230 mln lat).',
+        'Wokół rodzą się i wybuchają kolejne pokolenia gwiazd – każda dokłada nowe pierwiastki.'];
+    },
+    cloud(i, S, k, t, o, T) {
+      if (i % 5 === 0) {                                    // zgrubienie centralne
+        hSph(S[k], S[k + 1], _hv).multiplyScalar(0.09 * Math.cbrt(S[k + 2]));
+        o.x = _hv.x; o.y = _hv.y * 0.6; o.z = _hv.z;
+        hRGB(o, 1, 0.85, 0.6, 0.3);
+      } else {
+        const rr = 0.07 + 0.45 * Math.pow(S[k], 0.9), spread = (S[k + 1] - 0.5) * (1.3 - 0.8 * hSm(t, 0, 0.6));
+        const ang = (i & 1) * Math.PI + Math.log(rr / 0.07) * 2 + spread - t * 1.2;
+        o.x = Math.cos(ang) * rr; o.y = (S[k + 2] - 0.5) * 0.025; o.z = Math.sin(ang) * rr;
+        let b = 0.38;
+        if (S[k + 3] < 0.015) b += 1.8 * Math.pow(Math.max(0, Math.sin(T * 1.5 + S[k] * 60)), 20);   // błyski: nowe gwiazdy i supernowe
+        hRGB(o, 0.6, 0.7, 1, b);
+      }
+      hTilt(o, 0.6);
+    },
+  },
+  {
+    title: 'Kolejna gwiazda', dur: 15,
+    build(g) {
+      this.star = hBall(hBasic(0xffd890, { transparent: true, opacity: 0.85, depthWrite: false }), 1); this.glow = makeGlowSprite(0xffc070, 1, 0.7);
+      this.wd = makeGlowSprite(0xe8f0ff, 0.06, 0.95);
+      g.add(this.star, this.glow, this.wd);
+      this.dir = V(0.55, 0.45, 0.7).normalize();
+    },
+    R(t) {
+      if (t < 0.15) return 0.12 * hSm(t, 0.02, 0.15);
+      if (t < 0.72) return hMix(0.12, 0.3, hSm(t, 0.5, 0.7));
+      return 0.3 * (1 - hSm(t, 0.72, 0.82));
+    },
+    update(t, g, A) {
+      const R = this.R(t), col = new THREE.Color(0xffd890).lerp(new THREE.Color(0xff6a3a), hSm(t, 0.5, 0.7));
+      this.star.scale.setScalar(R + 1e-4); this.star.visible = R > 0.003; this.star.material.color.copy(col);
+      this.glow.scale.setScalar(3 * R + 1e-4); this.glow.material.color.copy(col);
+      this.wd.visible = t > 0.78;
+      const d = _hw.copy(this.dir).applyAxisAngle(UP, 0.6 * Math.sin(t * 9));
+      if (t < 0.15) A.pos.set(0.4, 0.25, 0.25).lerp(_hv.copy(this.dir).multiplyScalar(Math.max(R, 0.02) * 0.9), hSm(t, 0, 0.15));
+      else if (t < 0.72) A.pos.copy(d).multiplyScalar(R * (0.82 + 0.12 * Math.sin(t * 25)));
+      else A.pos.copy(d).multiplyScalar(hMix(0.27, 0.5, hSm(t, 0.72, 1)));
+      const inStar = t > 0.12 && t < 0.78;
+      A.e = inStar ? 0 : 6;
+      A.name = inStar ? 'jądro węgla w zewnętrznej warstwie gwiazdy' : 'atom węgla (C)';
+      A.when = 'gdzieś między 10 a 5 mld lat temu';
+      A.text = t < 0.5
+        ? ['Nasz atom wpada do kolejnej, mniejszej gwiazdy – ale tylko do zewnętrznych warstw,', 'gdzie jest za zimno, żeby się przetopić. Krąży tam z prądami gorącego gazu.',
+          'Wiele atomów przeszło przez kilka gwiazd – dokładnej drogi jednego atomu nikt nie zna.']
+        : ['Gwiazda się starzeje: puchnie w czerwonego olbrzyma i łagodnie zdmuchuje swoje warstwy', '(tak powstaje mgławica planetarna). Zostaje mały, gorący biały karzeł.', 'Nasz węgiel znów jest wolny i dryfuje w chmurze gazu i pyłu.'];
+    },
+    cloud(i, S, k, t, o) {
+      hSph(S[k], S[k + 1], _hv);
+      if (t < 0.17) {
+        const f = hSm(t, S[k + 3] * 0.08, 0.17);
+        if (f >= 1) return;
+        const r = hMix(0.15 + 0.4 * S[k + 2], 0.12, f);
+        o.x = _hv.x * r; o.y = _hv.y * r; o.z = _hv.z * r;
+        hRGB(o, 0.4, 0.45, 0.6, 0.4);
+      } else if (t > 0.72) {
+        const f = hSm(t, 0.72, 1), r = (0.05 + 0.45 * f) * (0.75 + 0.25 * S[k + 2]) * (1 + 0.35 * _hv.y * _hv.y);
+        o.x = _hv.x * r; o.y = _hv.y * r; o.z = _hv.z * r;
+        if (S[k + 3] < 0.5) hRGB(o, 0.3, 0.85, 0.95, 0.45 * (1 - 0.5 * f)); else hRGB(o, 1, 0.35, 0.35, 0.45 * (1 - 0.5 * f));
+      }
+    },
+  },
+  {
+    title: 'Narodziny Słońca', dur: 15,
+    build(g) { this.sun = hBall(hBasic(0xffe080), 1); this.glow = makeGlowSprite(0xffd060, 0.4, 0.9); g.add(this.sun, this.glow); },
+    update(t, g, A) {
+      const s = hSm(t, 0.5, 0.65);
+      this.sun.scale.setScalar(0.035 * s + 1e-4); this.sun.visible = s > 0; this.glow.scale.setScalar(0.45 * s + 1e-4);
+      const f = hSm(t, 0.25, 0.65), ang = 1.0 + t * 5 * Math.pow(0.15 / 0.22, 1.5);
+      A.pos.set(0.25, 0.12, 0.2).lerp(hTilt(_hv.set(Math.cos(ang) * 0.22, 0, Math.sin(ang) * 0.22), 0.5), f);
+      A.e = 6;
+      A.name = 'atom węgla w ziarenku pyłu (lód i sadza)';
+      A.when = '4,6 mld lat temu';
+      A.text = t < 0.3
+        ? ['Fala uderzeniowa – prawdopodobnie z pobliskiej supernowej – ściska chmurę gazu i pyłu.', 'W chmurze są atomy z wielu wcześniejszych gwiazd – także nasz.', '']
+        : ['Chmura zapada się w wirujący dysk, a w środku zapala się nowa gwiazda – nasze Słońce.', 'Pył zlepia się w coraz większe grudki. Nasz atom krąży tam,', 'gdzie za chwilę powstanie Ziemia.'];
+    },
+    cloud(i, S, k, t, o) {
+      if (i < 800) {                                        // czoło fali uderzeniowej
+        if (t > 0.4) return;
+        const Rs = hMix(0.9, 2.1, t / 0.4), th = Math.acos(1 - S[k] * (1 - Math.cos(0.42))), ph = S[k + 1] * 2 * Math.PI;
+        o.x = -1.6 + Math.cos(th) * Rs; o.y = Math.sin(th) * Math.cos(ph) * Rs; o.z = Math.sin(th) * Math.sin(ph) * Rs;
+        hRGB(o, 1, 0.55, 0.3, 0.55 * (1 - t / 0.4));
+        return;
+      }
+      hSph(S[k], S[k + 1], _hv).multiplyScalar(0.12 + 0.33 * Math.cbrt(S[k + 2]));
+      _hv.x += 0.06 * hSm(t, 0.05, 0.3) * (0.4 - _hv.x);
+      const f = hSm(t, 0.25 + 0.1 * S[k + 3], 0.6 + 0.1 * S[k + 3]);
+      const rd = 0.035 + 0.45 * Math.pow(S[k + 2], 0.8), ang = S[k + 1] * 6.283 + t * 5 * Math.pow(0.15 / rd, 1.5);
+      _hw.set(Math.cos(ang) * rd, (S[k + 3] - 0.5) * 0.02 * (rd / 0.3), Math.sin(ang) * rd);
+      hTilt(_hw, 0.5);
+      _hv.lerp(_hw, f);
+      o.x = _hv.x; o.y = _hv.y; o.z = _hv.z;
+      let b = 0.5;
+      if (t > 0.75 && ((rd > 0.165 && rd < 0.19) || (rd > 0.29 && rd < 0.32))) b *= 1 - hSm(t, 0.75, 0.9);   // przerwy – tam rosną planety
+      const hot = rd < 0.1 ? f * (1 - rd / 0.1) : 0;
+      hRGB(o, hMix(0.55, 1, hot), hMix(0.45, 0.8, hot), hMix(0.35, 0.5, hot), b);
+    },
+  },
+  {
+    title: 'Narodziny Ziemi i Księżyca', dur: 15,
+    build(g) {
+      this.earthMat = stdMat(0x4a3a30, { roughness: 0.9, emissive: 0xff5010 });
+      this.earth = hBall(this.earthMat, 1);
+      this.theia = hBall(stdMat(0x8a7a6a, { emissive: 0x401a08 }), 0.055);
+      this.moon = hBall(stdMat(0x9a9a9a), 0.03);
+      this.flash = makeGlowSprite(0xffd8a0, 0.5, 0);
+      this.atmo = makeGlowSprite(0x6fa8ff, 0.4, 0);
+      this.dir = V(0.45, 0.6, 0.66).normalize();
+      this.volcano = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.035, 16), stdMat(0x2a2420));
+      this.volcano.quaternion.setFromUnitVectors(UP, this.dir);
+      this.lava = makeGlowSprite(0xff7020, 0.05, 0);
+      g.add(this.earth, this.theia, this.moon, this.flash, this.atmo, this.volcano, this.lava);
+    },
+    update(t, g, A) {
+      const R = 0.03 + 0.12 * hSm(t, 0, 0.55);
+      this.earth.scale.setScalar(R);
+      const heat = (t < 0.6 ? 0.9 : 0.9 * (1 - hSm(t, 0.65, 0.85))) + 0.6 * hSm(t, 0.58, 0.61) * (1 - hSm(t, 0.62, 0.72));
+      this.earthMat.emissiveIntensity = heat;
+      this.earthMat.color.setRGB(0.3, 0.25, 0.22).lerp(_c1.setRGB(0.18, 0.35, 0.7), hSm(t, 0.85, 1));
+      this.theia.visible = t > 0.45 && t < 0.61;
+      this.theia.position.set(-0.7, 0.3, -0.1).lerp(_hv.set(-0.15, 0.06, 0), hSm(t, 0.45, 0.6));
+      const fl = hSm(t, 0.59, 0.61) * (1 - hSm(t, 0.62, 0.7));
+      this.flash.material.opacity = fl; this.flash.position.set(-0.12, 0.05, 0.02); this.flash.scale.setScalar(0.2 + 0.5 * fl);
+      this.moon.visible = t > 0.68;
+      this.moon.scale.setScalar(0.03 * hSm(t, 0.66, 0.78) + 1e-4);
+      this.moon.position.set(Math.cos(1 + t * 5) * 0.32, 0.05, Math.sin(1 + t * 5) * 0.32);
+      this.atmo.material.opacity = 0.45 * hSm(t, 0.78, 0.95); this.atmo.scale.setScalar(2.8 * R);
+      this.volcano.position.copy(this.dir).multiplyScalar(R * 0.98);
+      this.volcano.visible = t > 0.65;
+      this.lava.position.copy(this.dir).multiplyScalar(R + 0.03); this.lava.material.opacity = 0.9 * hSm(t, 0.7, 0.75);
+      if (t < 0.3) A.pos.set(0.35, 0.25, 0.3).lerp(_hv.copy(this.dir).multiplyScalar(R), hSm(t, 0, 0.3));
+      else if (t < 0.72) A.pos.copy(this.dir).multiplyScalar(R * 0.85);
+      else A.pos.copy(this.dir).multiplyScalar(hMix(R * 0.85, R + 0.08, hSm(t, 0.72, 0.92))).add(_hv.set(0.04, 0.02, 0).multiplyScalar(hSm(t, 0.9, 1)));
+      A.e = 6;
+      A.co2 = t > 0.76;
+      A.name = t < 0.3 ? 'atom węgla w ziarenku pyłu' : t < 0.76 ? 'atom węgla w gorącej skale' : 'dwutlenek węgla (CO₂) z wulkanu';
+      A.when = '4,54 mld lat temu';
+      A.text = t < 0.45
+        ? ['Pył i kamienie zderzają się i zlepiają w coraz większe bryły, a z nich powstaje młoda Ziemia –', 'rozżarzona od zderzeń. Nasz atom ląduje na niej razem z ziarenkiem pyłu.', '']
+        : t < 0.72 ? ['Ziemia zderza się z planetą wielkości Marsa (nazywamy ją Theia).', 'Z wyrzuconych odłamków powstaje Księżyc.', '']
+          : ['Ziemia stygnie. Wulkany wypuszczają gazy – tak powstaje atmosfera, a para wodna skrapla się w oceany.', 'Nasz węgiel wydostaje się z wulkanu jako CO₂:', 'cząsteczka z 1 atomu węgla i 2 atomów tlenu (czerwone).'];
+    },
+    cloud(i, S, k, t, o) {
+      if (i < 1500) {                                       // odłamki po zderzeniu → Księżyc
+        if (t < 0.6 || t > 0.82) return;
+        const rr = 0.2 + 0.15 * S[k], ang = S[k + 1] * 6.283 + t * 8;
+        o.x = Math.cos(ang) * rr; o.y = 0.05 + (S[k + 2] - 0.5) * 0.03; o.z = Math.sin(ang) * rr;
+        hRGB(o, 1, 0.55, 0.3, 0.1 * (1 - hSm(t, 0.66, 0.82)));
+        return;
+      }
+      const R = 0.03 + 0.12 * hSm(t, 0, 0.55), f = hSm(t, S[k + 3] * 0.45, S[k + 3] * 0.45 + 0.12);
+      if (f >= 1) return;
+      hSph(S[k], S[k + 1], _hv).multiplyScalar(hMix(0.18 + 0.37 * S[k + 2], R, f));
+      o.x = _hv.x; o.y = _hv.y; o.z = _hv.z;
+      const hot = hSm(f, 0.7, 1);
+      hRGB(o, hMix(0.55, 1, hot), hMix(0.5, 0.5, hot), hMix(0.45, 0.2, hot), 0.45);
+    },
+  },
+  {
+    title: 'Ocean i pierwsze życie', dur: 16,
+    build(g) {
+      const floor = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.03, 48), stdMat(0x3a3028, { roughness: 1 }));
+      floor.position.y = -0.345;
+      g.add(floor);
+      const rock = stdMat(0x2a2622, { roughness: 1 });
+      [[0.035, 0.06, 0.12, -0.27], [0.028, 0.045, 0.1, -0.16], [0.02, 0.032, 0.07, -0.075]].forEach(([a, b, h, y]) => {
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(a, b, h, 14), rock); m.position.set(-0.15, y, 0); g.add(m);
+      });
+      const water = makeGlowSprite(0x1a3a7a, 2.2, 0.75); water.position.set(0, 0, -0.45); g.add(water);
+      const vent = makeGlowSprite(0xff8a40, 0.1, 0.8); vent.position.set(-0.15, -0.04, 0); g.add(vent);
+      const cellMat = () => stdMat(0x7fd88f, { transparent: true, opacity: 0.35, depthWrite: false, emissive: 0x0a3a14 });
+      this.cells = [hBall(cellMat(), 1), hBall(cellMat(), 1)];
+      g.add(...this.cells);
+    },
+    cellPos(t, n, out) {
+      const d = hSm(t, 0.7, 0.9);
+      return out.set(0.12 + (n ? 0.065 : -0.065) * d, -0.08, 0.08);
+    },
+    update(t, g, A) {
+      const appear = hSm(t, 0.35, 0.5), d = hSm(t, 0.7, 0.9);
+      this.cells.forEach((c, n) => {
+        this.cellPos(t, n, c.position);
+        c.scale.setScalar(0.065 * (1 - 0.22 * d) * appear + 1e-4);
+        c.visible = n === 0 ? appear > 0 : t > 0.7;
+      });
+      this.cellPos(t, 1, _hv).add(_hw.set(0.015, 0.012, 0.02));
+      hPath([[0, 0.35, 0.22, 0.1], [0.3, -0.1, -0.02, 0.05], [0.45, _hv.x, _hv.y, _hv.z]], t, A.pos);
+      if (t > 0.45) A.pos.copy(_hv);
+      A.e = 6; A.co2 = t < 0.3;
+      A.name = t < 0.3 ? 'CO₂ rozpuszczony w oceanie' : t < 0.45 ? 'węgiel w cząsteczce organicznej' : 'węgiel w jednej z pierwszych komórek';
+      A.when = 'ok. 4–3,5 mld lat temu';
+      A.text = t < 0.45
+        ? ['W ciemnym oceanie, przy gorących źródłach na dnie (kominach hydrotermalnych),', 'z CO₂ i innych prostych cząsteczek powstają cząsteczki organiczne.', 'Nasz węgiel staje się częścią jednej z nich.']
+        : ['Z takich cząsteczek powstają pierwsze proste komórki. Komórka rośnie i dzieli się na dwie –', 'nasz węgiel jest w jednej z nich. (Jak dokładnie powstało życie, naukowcy wciąż badają;', 'kominy na dnie oceanu to jedna z głównych hipotez.)'];
+    },
+    cloud(i, S, k, t, o, T) {
+      if (i < 2500) {                                       // gorąca woda z komina
+        if (i % 2) return;
+        const age = (S[k] + T * 0.12) % 1;
+        o.x = -0.15 + (S[k + 1] - 0.5) * 0.12 * age + 0.05 * age; o.y = -0.04 + age * 0.5; o.z = (S[k + 2] - 0.5) * 0.12 * age;
+        hRGB(o, 0.6, 0.4, 0.3, 0.13 * (1 - age));
+      } else if (i < 4000) {                                // drobne cząsteczki w wodzie
+        hSph(S[k], S[k + 1], _hv).multiplyScalar(0.4 * Math.cbrt(S[k + 2]));
+        o.x = -0.05 + _hv.x + 0.01 * Math.sin(T + S[k + 3] * 30); o.y = Math.max(-0.32, -0.1 + _hv.y * 0.6); o.z = _hv.z * 0.7;
+        hRGB(o, 0.3, 0.7, 0.8, 0.12);
+      } else {                                              // wnętrze komórek
+        const appear = hSm(t, 0.35, 0.5);
+        if (!appear) return;
+        const n = t > 0.7 ? i & 1 : 0;
+        this.cellPos(t, n, _hw);
+        hSph(S[k], S[k + 1], _hv).multiplyScalar(0.05 * Math.cbrt(S[k + 2]) * appear).add(_hw);
+        o.x = _hv.x; o.y = _hv.y; o.z = _hv.z;
+        hRGB(o, 0.4, 0.95, 0.5, 0.35);
+      }
+    },
+  },
+  {
+    title: 'Skały i wulkany – obieg węgla', dur: 15,
+    build(g) {
+      const D = 0.3;
+      const box = (w, h, d, x, y, z, mat) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); g.add(m); return m; };
+      box(1.1, 0.4, D, 0, -0.35, 0, stdMat(0x7a2a10, { emissive: 0x3a0c00 }));               // płaszcz Ziemi
+      box(0.7, 0.08, D, -0.2, -0.11, 0, stdMat(0x4a4a52));                                  // płyta oceaniczna
+      const slab = box(0.42, 0.08, D + 0.01, 0.15 + Math.cos(0.8) * 0.21, -0.11 - Math.sin(0.8) * 0.21, 0, stdMat(0x4a4a52));
+      slab.rotation.z = -0.8;
+      box(0.4, 0.3, D, 0.35, 0, 0, stdMat(0x7a5a3a));                                      // kontynent
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.2, 24), stdMat(0x4a3a30)); cone.position.set(0.35, 0.25, 0); g.add(cone);
+      box(0.7, 0.22, D, -0.2, 0.04, 0, stdMat(0x2a6ac8, { transparent: true, opacity: 0.45, depthWrite: false }));   // ocean
+      this.layers = [0, 1, 2].map(n => { const m = box(0.7, 0.012, D + 0.012, -0.2, -0.065 + 0.012 * n, 0, stdMat([0xe8dcc0, 0xd8c8a8, 0xeee4cc][n])); m.visible = false; return m; });
+      g.add(beam(V(0.32, -0.3, 0.16), V(0.35, 0.33, 0.16), 0.01, hBasic(0xff6a20)));
+      this.chamber = makeGlowSprite(0xff7020, 0.2, 0.8); this.chamber.position.set(0.33, -0.15, 0.16);
+      this.vent = makeGlowSprite(0xff8030, 0.12, 0);
+      this.vent.position.set(0.35, 0.36, 0.05);
+      g.add(this.chamber, this.vent);
+    },
+    update(t, g, A) {
+      this.layers.forEach((m, n) => { m.visible = t > 0.12 + 0.07 * n; });
+      this.vent.material.opacity = 0.9 * hSm(t, 0.78, 0.84);
+      hPath([[0, -0.2, 0.12, 0.17], [0.18, -0.2, -0.058, 0.17], [0.35, -0.2, -0.058, 0.17], [0.5, 0.12, -0.1, 0.17], [0.65, 0.31, -0.3, 0.17],
+        [0.75, 0.33, -0.12, 0.17], [0.86, 0.35, 0.34, 0.17], [1, 0.2, 0.5, 0.17]], t, A.pos);
+      A.e = 6; A.co2 = t > 0.84;
+      A.name = t < 0.2 ? 'węgiel w martwej komórce' : t < 0.65 ? 'węglan wapnia (CaCO₃) – wapień' : t < 0.84 ? 'węgiel w stopionej skale (magmie)' : 'CO₂ z wulkanu';
+      A.when = 'przez setki milionów lat (wiele razy)';
+      A.text = t < 0.35
+        ? ['Komórka umiera i opada na dno. Z resztek organizmów i muszelek powstaje skała – wapień.', 'Nasz węgiel zostaje w niej uwięziony na miliony lat.', '']
+        : t < 0.65 ? ['Płyty skorupy ziemskiej przesuwają się (kilka cm na rok). Płyta oceaniczna wsuwa się', 'pod kontynent i zabiera skałę z naszym atomem w głąb Ziemi.', '']
+          : ['W głębi skała się topi, a wulkan wyrzuca węgiel z powrotem do powietrza jako CO₂.', 'Taki obieg (powietrze → ocean → organizmy → skały → wulkany) nasz atom', 'mógł przejść wiele razy – jeden trwa miliony lat.'];
+    },
+    cloud(i, S, k, t, o, T) {
+      if (i < 1500) {                                       // „śnieg morski” – resztki opadające na dno
+        const b = 0.2 * (1 - hSm(t, 0.3, 0.4));
+        if (!b || i % 3) return;
+        o.x = -0.55 + 0.7 * S[k]; o.y = 0.15 - ((S[k + 1] + T * 0.05) % 1) * 0.22; o.z = (S[k + 2] - 0.5) * 0.28;
+        hRGB(o, 1, 1, 1, b);
+      } else if (t > 0.8) {                                 // erupcja
+        const age = (S[k] + T * 0.4) % 1, b = hSm(t, 0.8, 0.88) * (1 - age);
+        o.x = 0.35 + (S[k + 1] - 0.5) * age * 0.25; o.y = 0.35 + age * 0.35 * (0.6 + 0.4 * S[k + 3]); o.z = (S[k + 2] - 0.5) * age * 0.2;
+        hRGB(o, hMix(1, 0.6, age), hMix(0.5, 0.55, age), hMix(0.15, 0.5, age), 0.6 * b);
+      }
+    },
+  },
+  {
+    title: 'Paproć i dinozaur', dur: 16,
+    build(g) {
+      const ground = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.02, 48), stdMat(0x5a6a2e, { roughness: 1 }));
+      ground.position.y = -0.36;
+      this.fern = makeHistFern(); this.fern.position.set(-0.2, -0.35, 0);
+      this.dino = makeHistDino();
+      const sun = makeGlowSprite(0xfff0a0, 0.5, 0.8); sun.position.set(-0.45, 0.42, -0.3);
+      g.add(ground, this.fern, this.dino, sun);
+      this.leaf = this.fern.userData.leaf.clone().add(this.fern.position);
+    },
+    update(t, g, A, T) {
+      const D = this.dino.userData, stopX = this.leaf.x + 0.11 + 0.212;
+      const walk = hSm(t, 0.28, 0.5), leave = hSm(t, 0.88, 1);
+      this.dino.position.set(hMix(0.85, stopX, walk) + leave * 0.15, -0.35, this.leaf.z);
+      const moving = (walk > 0 && walk < 1) || (leave > 0 && leave < 1);
+      D.legs.forEach((l, n) => { l.rotation.z = moving ? Math.sin(T * 8 + (n % 2) * Math.PI + (n >> 1) * 1.6) * 0.35 : 0; });
+      D.neck.rotation.z = 0.9 * hSm(t, 0.5, 0.58) * (1 - hSm(t, 0.68, 0.76));
+      this.dino.updateMatrixWorld(true);
+      D.head.getWorldPosition(_hw); hist.root.worldToLocal(_hw);         // pysk dinozaura (w układzie sceny)
+      const body = _hu.copy(this.dino.position).add(_hv.set(0, 0.17, 0));
+      if (t < 0.25) A.pos.set(0.3, 0.35, 0.1).lerp(this.leaf, hSm(t, 0, 0.25));
+      else if (t < 0.58) A.pos.copy(this.leaf);
+      else if (t < 0.62) A.pos.copy(this.leaf).lerp(_hw, hSm(t, 0.58, 0.62));
+      else if (t < 0.76) A.pos.copy(_hw).lerp(body, hSm(t, 0.62, 0.72));
+      else if (t < 0.86) A.pos.copy(body).lerp(_hw, hSm(t, 0.78, 0.86));
+      else A.pos.copy(_hw).add(_hv.set(-0.05, 0.25, 0.05).multiplyScalar(hSm(t, 0.86, 1)));
+      A.e = 6; A.co2 = t < 0.25 || t > 0.84;
+      A.name = t < 0.25 ? 'CO₂ w powietrzu' : t < 0.6 ? 'cukier (glukoza) w liściu paproci' : t < 0.84 ? 'cukier w ciele dinozaura' : 'CO₂ wydychany przez dinozaura';
+      A.when = 'ok. 70 mln lat temu';
+      A.text = t < 0.5
+        ? ['Paproć pobiera CO₂ z powietrza i dzięki energii światła słonecznego robi z niego cukier,', 'a do powietrza oddaje tlen. To fotosynteza.', 'Nasz węgiel jest teraz częścią liścia.']
+        : ['Roślinożerny dinozaur zjada liść. Cukier daje mu energię: w jego komórkach', '„spala się” z tlenem z powrotem na CO₂ i wodę.', 'Dinozaur wydycha nasz węgiel jako CO₂.'];
+    },
+    cloud(i, S, k, t, o, T) {
+      if (i < 1200) {                                       // powietrze
+        o.x = (S[k] - 0.5) * 1.0 + 0.02 * Math.sin(T * 0.5 + S[k + 3] * 20); o.y = -0.3 + S[k + 1] * 0.7; o.z = (S[k + 2] - 0.5) * 0.6;
+        hRGB(o, 0.5, 0.6, 0.7, 0.12);
+      } else if (i < 1800 && t > 0.1 && t < 0.55) {         // fotosynteza – iskierki światła na liściach
+        hSph(S[k], S[k + 1], _hv); _hv.y = Math.abs(_hv.y);
+        o.x = this.fern.position.x + _hv.x * 0.28 * S[k + 2]; o.y = -0.3 + _hv.y * 0.2; o.z = _hv.z * 0.28 * S[k + 2];
+        hRGB(o, 0.9, 1, 0.5, 0.5 * Math.pow(Math.max(0, Math.sin(T * 3 + S[k + 3] * 40)), 6));
+      }
+    },
+  },
+  {
+    title: 'Pszenica i chleb', dur: 15,
+    build(g) {
+      const ground = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.02, 48), stdMat(0x6a5030, { roughness: 1 }));
+      ground.position.y = -0.36;
+      g.add(ground);
+      this.stalkMat = stdMat(0x5a9a3a); this.earMat = stdMat(0x7aa84a);
+      this.field = new THREE.Group(); g.add(this.field);
+      const rnd = seededRandom('pszenica');
+      for (let i = 0; i < 44; i++) {
+        const x = i === 0 ? 0.05 : (rnd() - 0.5) * 0.85, z = i === 0 ? 0.14 : (rnd() - 0.5) * 0.55, h = 0.32 + (i === 0 ? 0.05 : rnd() * 0.12);
+        const s = new THREE.Group();
+        s.position.set(x, 0, z);
+        if (i) s.rotation.set((rnd() - 0.5) * 0.15, 0, (rnd() - 0.5) * 0.15);
+        s.add(beam(V(0, 0, 0), V(0, h, 0), 0.004, this.stalkMat, 5), beam(V(0, 0.1, 0), V(0.06, 0.2, 0.01), 0.003, this.stalkMat, 4));
+        s.add(ellipsoid(this.earMat, 0.012, 0.045, 0.012, 0, h + 0.04, 0));
+        this.field.add(s);
+        if (!i) this.s0 = { x, z, h };
+      }
+      this.field.position.y = -0.35;
+      this.bread = new THREE.Group();
+      this.bread.add(ellipsoid(stdMat(0xb8763a, { roughness: 0.8 }), 0.15, 0.075, 0.09, 0, 0.07, 0));
+      this.bread.position.set(0.02, -0.35, 0.06);
+      g.add(this.bread);
+    },
+    update(t, g, A) {
+      const ripe = hSm(t, 0.4, 0.62);
+      this.stalkMat.color.setHex(0x5a9a3a).lerp(_c1.setHex(0xd8b040), ripe);
+      this.earMat.color.setHex(0x7aa84a).lerp(_c1.setHex(0xe0b850), ripe);
+      const cut = 1 - hSm(t, 0.62, 0.72);
+      this.field.scale.y = cut + 1e-3; this.field.visible = cut > 0.01;
+      this.bread.scale.setScalar(hSm(t, 0.68, 0.8) + 1e-4); this.bread.visible = t > 0.68;
+      const s = this.s0, ear = -0.35 + (s.h + 0.04) * cut;
+      hPath([[0, 0.4, 0.32, 0.15], [0.3, s.x + 0.05, -0.17, s.z + 0.01], [0.5, s.x, -0.35 + s.h + 0.04, s.z], [0.62, s.x, -0.35 + s.h + 0.04, s.z]], t, A.pos);
+      if (t > 0.62) A.pos.set(s.x, ear, s.z).lerp(_hv.set(0.03, -0.27, 0.1), hSm(t, 0.66, 0.8));
+      A.e = 6; A.co2 = t < 0.3;
+      A.name = t < 0.3 ? 'CO₂ w powietrzu' : t < 0.66 ? 'skrobia w ziarnie pszenicy' : 'skrobia w chlebie';
+      A.when = t < 0.62 ? 'rok temu' : 'kilka dni temu';
+      A.text = t < 0.35
+        ? ['Przez kolejne 70 mln lat nasz atom przechodził przez powietrze, oceany, rośliny i zwierzęta', 'jeszcze wiele razy. Rok temu, jako CO₂, wleciał przez maleńki otwór (aparat szparkowy)', 'do liścia pszenicy.']
+        : t < 0.64 ? ['Fotosynteza zamienia go w cukier, a roślina odkłada go w ziarnie jako skrobię.', 'Pszenica dojrzewa i złoci się.', '']
+          : ['Zboże zebrano, ziarno zmielono na mąkę i upieczono z niej chleb.', 'Nasz atom jest teraz w kromce chleba.', ''];
+    },
+  },
+  {
+    title: 'W Tobie', dur: 18,
+    build(g) {
+      const floor = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.015, 48), stdMat(0x30384a, { roughness: 1 }));
+      floor.position.y = -0.53;
+      this.human = SCALE_BUILDERS.human();
+      this.human.scale.setScalar(0.85);
+      this.human.position.set(0, -0.52, 0);
+      this.mixer = this.human.userData.mixer || null;
+      this.bread = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.012), stdMat(0xd9b07a));
+      this.heart = makeGlowSprite(0xff3040, 0.06, 0.6);
+      this.heart.material.depthTest = false; this.heart.renderOrder = 12;
+      this.heart.position.set(0.03, 0.12, 0.06);
+      g.add(floor, this.human, this.bread, this.heart);
+    },
+    update(t, g, A, T, dt) {
+      if (this.mixer) this.mixer.update(dt);
+      hPath([[0, 0.17, -0.14, 0.07], [0.1, 0.17, -0.14, 0.07], [0.2, 0, 0.225, 0.08], [0.35, 0, -0.01, 0.08], [0.5, 0.03, 0.12, 0.07], [0.62, 0.15, 0.09, 0.04]], t, A.pos);
+      this.bread.position.copy(A.pos); this.bread.visible = t < 0.2;
+      this.heart.scale.setScalar(0.06 * (1 + 0.25 * Math.pow(Math.max(0, Math.sin(T * 7)), 8)));
+      A.e = 6;
+      A.name = t < 0.2 ? 'skrobia w chlebie' : t < 0.35 ? 'cukier w Twoim jelicie' : t < 0.62 ? 'cząsteczka we krwi' : 'węgiel w białku Twojego mięśnia';
+      A.when = 'teraz';
+      A.text = t < 0.62
+        ? ['Zjadasz kanapkę. Skrobia rozkłada się na cukier, który z krwią płynie po całym ciele.', 'Część węgla Twoje komórki „spalają” i wydychasz go jako CO₂ – ale nasz atom', 'zostaje wbudowany w Twoje ciało, np. w białko mięśnia ramienia.']
+        : ['Ten atom ma ok. 13,8 mld lat – jego proton powstał w pierwszej milionowej sekundy Wszechświata.', 'Masz w sobie ok. 800 kwadrylionów (8·10²⁶) atomów węgla – każdy z podobnie długą historią.',
+          'Kiedyś znów wydychasz go jako CO₂ – i jego podróż trwa dalej.'];
+    },
+  },
+];
+const _c1 = new THREE.Color();
+
+function layoutMode12() {
+  const fwd = horizontalForward();
+  hist.root.position.copy(eyePos).addScaledVector(fwd, HIST_DISTANCE_M);
+  hist.root.position.y = eyePos.y + 0.02;
+  hist.root.quaternion.setFromAxisAngle(UP, Math.atan2(-fwd.x, -fwd.z));   // lokalne +z w stronę widza
+  hist.root.scale.setScalar(1);
+  hist.tPts.length = 0;
+  if (!renderer.xr.isPresenting) orbitControls.target.copy(hist.root.position);
+}
+function histSeek(p) {
+  const H = state.hist, N = HIST.length;
+  H.p = THREE.MathUtils.clamp(p, 0, N);
+  if (H.p >= N) H.playing = false;
+  hist.tPts.length = 0;
+  drawMenu();
+}
+function histStep(dir) {                                     // poprzedni / następny rozdział
+  const H = state.hist, idx = Math.min(HIST.length - 1, Math.floor(H.p)), t = H.p - idx;
+  if (dir < 0) histSeek(t > 0.15 ? idx : idx - 1);
+  else histSeek(Math.min(HIST.length - 1, idx + 1));
+}
+function histSetPlaying(on) {
+  const H = state.hist;
+  if (on && H.p >= HIST.length) H.p = 0;
+  H.playing = on;
+  drawMenu();
+}
+function updateMode12(dt) {
+  const H = state.hist, N = HIST.length;
+  hist.clock += dt;
+  if (H.playing) {
+    H.p += dt * H.speed / HIST[Math.min(N - 1, Math.floor(H.p))].dur;
+    if (H.p >= N) { H.p = N; H.playing = false; drawMenu(); }
+  }
+  const idx = Math.min(N - 1, Math.floor(H.p)), t = Math.min(1, H.p - idx), ch = HIST[idx], T = hist.clock;
+  if (idx !== H.idx) {                                      // nowy rozdział: pokaż jego scenę
+    if (!ch.g) { ch.g = new THREE.Group(); hist.root.add(ch.g); if (ch.build) ch.build(ch.g); }
+    HIST.forEach((c, k) => { if (c.g) c.g.visible = k === idx; });
+    hist.tPts.length = 0;
+    H.idx = idx;
+    drawMenu();
+  }
+  const A = histCtx;
+  A.e = 0; A.co2 = false; A.fog = 0; A.fogColor = 0xffa060; A.text = ['', '', ''];
+  ch.update(t, ch.g, A, T, dt);
+  // chmura punktów
+  if (ch.cloud) {
+    const pos = hist.geo.attributes.position.array, col = hist.geo.attributes.color.array, S = hist.seeds, o = _ho;
+    for (let i = 0; i < HIST_POINTS; i++) {
+      o.x = o.y = o.z = o.r = o.g = o.b = 0;
+      ch.cloud(i, S, i * 4, t, o, T);
+      const j = i * 3;
+      pos[j] = o.x; pos[j + 1] = o.y; pos[j + 2] = o.z;
+      col[j] = o.r * HIST_BRIGHTNESS; col[j + 1] = o.g * HIST_BRIGHTNESS; col[j + 2] = o.b * HIST_BRIGHTNESS;
+    }
+    hist.geo.attributes.position.needsUpdate = hist.geo.attributes.color.needsUpdate = true;
+  }
+  hist.cloud.visible = !!ch.cloud;
+  hist.fog.material.opacity = A.fog;
+  hist.fog.material.color.setHex(A.fogColor);
+  // nasz atom: znacznik, elektrony, CO₂, ślad
+  hist.marker.position.copy(A.pos);
+  hist.glow.scale.setScalar(0.09 * (1 + 0.15 * Math.sin(T * 4)));
+  hist.ring.visible = A.e > 0;
+  hist.shells[1].visible = A.e > 2;
+  hist.electrons.forEach((e, n) => {
+    const inner = n < 2, r = inner ? 0.024 : 0.04, a = T * (inner ? 4 : 2.6) + (inner ? n * Math.PI : (n - 2) * Math.PI / 2);
+    e.visible = n < A.e && (inner || A.e > 2);
+    e.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+  });
+  hist.co2.visible = A.co2;
+  hist.co2.rotation.set(0.3, T * 0.8, 0);
+  const P = hist.tPts, last = P[P.length - 1];
+  if (!last || last.distanceTo(A.pos) > 0.004) {
+    if (last && last.distanceTo(A.pos) > 0.3) P.length = 0;
+    P.push(A.pos.clone());
+    if (P.length > hist.TRAIL) P.shift();
+  }
+  const tp = hist.tGeo.attributes.position.array, tc = hist.tGeo.attributes.color.array;
+  P.forEach((p, n) => { const f = (n + 1) / P.length * 0.8; tp[n * 3] = p.x; tp[n * 3 + 1] = p.y; tp[n * 3 + 2] = p.z; tc[n * 3] = f; tc[n * 3 + 1] = 0.75 * f; tc[n * 3 + 2] = 0.3 * f; });
+  hist.tGeo.setDrawRange(0, P.length);
+  hist.tGeo.attributes.position.needsUpdate = hist.tGeo.attributes.color.needsUpdate = true;
+  hist.marker.getWorldPosition(_hv);
+  placeLabel(hist.label, _hv, 0.03 * hist.root.scale.x, 1.5);
+  // tablica z opisem
+  hist.board.setText([`Rozdział ${idx + 1} z ${N}: ${ch.title}`, `${A.when}  ·  Twój atom: ${A.name}`, ...A.text], ['#ffe9a8', '#9fd4ff']);
+  placeBoard(hist.board, _hv.copy(hist.root.position).addScaledVector(UP, -0.63 * hist.root.scale.x), 0, 8);
+  // suwak w menu nadąża za animacją
+  H.menuT -= dt;
+  if ((H.playing || H.dirty) && H.menuT <= 0 && !state.menuHidden) { H.menuT = 0.25; H.dirty = false; drawMenu(); }
+}
+// prawa gałka ◀ ▶ – przewijanie czasu
+function stickHist(ctrl, dt) {
+  const gp = ctrl.userData.inputSource && ctrl.userData.inputSource.gamepad;
+  if (!gp || gp.axes.length <= ZOOM_STICK_AXIS || ctrl.userData.handedness !== 'right') return;
+  const x = gp.axes[ZOOM_STICK_AXIS - 1];
+  if (Math.abs(x) > STICK_DEADZONE) { state.hist.p = THREE.MathUtils.clamp(state.hist.p + x * dt * 0.8, 0, HIST.length); state.hist.dirty = true; }
+}
+// rysowanie suwaka czasu w menu
+function drawHistTimeline(ctx, b) {
+  const H = state.hist, N = HIST.length, idx = Math.min(N - 1, Math.floor(H.p));
+  const x0 = b.x + 30, x1 = b.x + b.w - 30, yT = b.y + 80, f = H.p / N;
+  ctx.font = 'bold 30px system-ui, sans-serif';
+  ctx.fillText(`Oś czasu  ·  ${idx + 1}/${N}: ${HIST[idx].title}`, b.x + b.w / 2, b.y + 34);
+  ctx.fillStyle = '#1a2340'; roundRect(ctx, x0, yT - 7, x1 - x0, 14, 7); ctx.fill();
+  ctx.fillStyle = '#7fb0ff'; roundRect(ctx, x0, yT - 7, Math.max(14, (x1 - x0) * f), 14, 7); ctx.fill();
+  ctx.fillStyle = '#c8d4f0';
+  for (let k = 1; k < N; k++) { const x = x0 + (x1 - x0) * k / N; ctx.fillRect(x - 1.5, yT - 16, 3, 32); }
+  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(x0 + (x1 - x0) * f, yT, 18, 0, Math.PI * 2); ctx.fill();
+}
+
+// =====================================================================
 //  MENU (panel z przyciskami, rysowany na canvas) – przesuwane i chowane
 // =====================================================================
 const MENU_CANVAS_W = 1024, MENU_CANVAS_H = 730;
 // wysokość narysowanej części panelu (tryby z dodatkowymi rzędami przycisków mają wyższy panel)
-const menuUsedH = () => ({ 3: 716, 11: 716, 2: 588, 8: 588, 9: 588 }[state.mode] || 460);
+const menuUsedH = () => ({ 3: 716, 11: 716, 12: 716, 2: 588, 8: 588, 9: 588 }[state.mode] || 460);
 const MENU_HEIGHT_M = MENU_WIDTH_M * MENU_CANVAS_H / MENU_CANVAS_W;
-const MODE_NAMES = { 1: 'Model', 2: 'Planety', 3: 'Ludziki', 4: 'Obiekty', 5: 'Kosmos', 6: 'Skala', 7: 'Galaktyka', 8: 'Grawitacja', 9: 'Światło', 10: 'Podróż', 11: 'Atom' };
+const MODE_NAMES = { 1: 'Model', 2: 'Planety', 3: 'Ludziki', 4: 'Obiekty', 5: 'Kosmos', 6: 'Skala', 7: 'Galaktyka', 8: 'Grawitacja', 9: 'Światło', 10: 'Podróż', 11: 'Atom', 12: 'Historia' };
 const menuButtons = [
   { id: 'hide', label: 'Schowaj ✕', x: 760, y: 18, w: 246, h: 70, small: true },
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(m => ({ id: 'mode' + m, label: 'Tryb ' + m, sub: MODE_NAMES[m], x: 18 + (m - 1) * 90, y: 196, w: 85, h: 120, small: true, font: 'bold 21px system-ui, sans-serif', subFont: '15px system-ui, sans-serif' })),
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => ({ id: 'mode' + m, label: 'Tryb ' + m, sub: MODE_NAMES[m], x: 18 + (m - 1) * 82.5, y: 196, w: 78, h: 120, small: true, font: 'bold 19px system-ui, sans-serif', subFont: '14px system-ui, sans-serif' })),
+  // Tryb 12: oś czasu, odtwarzanie, tempo
+  { id: 'histTime', draw: drawHistTimeline, drag: f => histSeek(f * HIST.length), x: 18, y: 332, w: 988, h: 112, modes: [12] },
+  { id: 'histPrev', label: '◀◀ Poprzedni', x: 18, y: 456, w: 236, h: 116, modes: [12], small: true, font: 'bold 30px system-ui, sans-serif' },
+  { id: 'histPlay', label: () => (state.hist.playing ? '❚❚ Pauza' : '▶ Start'), x: 266, y: 456, w: 236, h: 116, modes: [12], small: true },
+  { id: 'histNext', label: 'Następny ▶▶', x: 514, y: 456, w: 236, h: 116, modes: [12], small: true, font: 'bold 30px system-ui, sans-serif' },
+  { id: 'histRestart', label: '⟲ Od początku', x: 762, y: 456, w: 244, h: 116, modes: [12], small: true, font: 'bold 30px system-ui, sans-serif' },
+  ...HIST_SPEEDS.map((v, i) => ({ id: 'hspd' + i, label: ['×¼ wolno', '×½', '×1', '×2', '×4 szybko'][i], x: 18 + i * 199, y: 588, w: 191, h: 116, modes: [12], small: true, active: () => state.hist.speed === v })),
   // Tryb 11: orbitale, warianty, pierwiastki, model Bohra
   ...Object.keys(ATOM_ORBITALS).map((o, i) => ({ id: 'orb_' + o, label: o, x: 18 + i * 141, y: 332, w: 135, h: 112, modes: [11], small: true, active: () => state.atom.kind === 'orbital' && state.atom.orb === o })),
   { id: 'atomVar', label: () => { const o = ATOM_ORBITALS[state.atom.orb]; return state.atom.kind === 'orbital' && o.variants.length > 1 ? 'Kształt: ' + o.variants[state.atom.variant % o.variants.length] : 'Kształt ↻'; },
@@ -7188,6 +8081,7 @@ const MENU_HINTS = {
   7: 'Gałka/2 ręce: Galaktyka → Słońce → Ziemia · suwak: prędkość lotu',
   8: 'Spust: chwyć obiekt i włóż w siatkę · gałka: obróć siatkę · sondy: porównaj upływ czasu',
   10: 'Gałka/2 ręce: od człowieka do całego kosmosu i z powrotem · suwak: prędkość',
+  12: 'Suwak / prawa gałka ◀ ▶: czas · A: pauza · B: dalej · spust: obróć scenę',
   11: 'Wybierz orbital albo pierwiastek · spust: obracaj atom · gałka/2 ręce: obrót i powiększenie',
   9: 'Prędkość: statek się skraca, jego zegar tyka wolniej · „Widok z pokładu”: tak widzi kosmos załoga',
 };
@@ -7247,6 +8141,7 @@ function drawMenu() {
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    if (b.draw) { b.draw(ctx, b); continue; }        // własny rysunek (oś czasu w Trybie 12)
     if (b.slider) {                                   // suwak prędkości zoomu (Tryb 6)
       const sl = speedSlider();
       const f = Math.log(sl.v / sl.min) / Math.log(sl.max / sl.min);
@@ -7284,6 +8179,7 @@ function onMenuButton(button) {
   if (button.id.startsWith('el_')) { atomSet({ kind: 'element', el: button.id.slice(3) }); return; }
   if (button.id.startsWith('temp')) { setM3Temperature(+button.id.slice(4)); return; }
   if (button.id.startsWith('ev_')) { m3StartEvent(button.id.slice(3)); return; }
+  if (button.id.startsWith('hspd')) { state.hist.speed = HIST_SPEEDS[+button.id.slice(4)]; histSetPlaying(true); return; }
   switch (button.id) {
     case 'hide': setMenuHidden(true); break;
     case 'mode1': setMode(1); break;
@@ -7309,6 +8205,11 @@ function onMenuButton(button) {
     case 'jHuman': mwGoTo(J_LOG_MAX); break;
     case 'mode10': setMode(10); break;
     case 'mode11': setMode(11); break;
+    case 'mode12': setMode(12); break;
+    case 'histPrev': histStep(-1); break;
+    case 'histNext': histStep(1); break;
+    case 'histPlay': histSetPlaying(!state.hist.playing); break;
+    case 'histRestart': histSeek(0); histSetPlaying(true); break;
     case 'atomVar': if (state.atom.kind === 'orbital') atomSet({ variant: state.atom.variant + 1 }); break;
     case 'atomBohr': state.atom.bohr = !state.atom.bohr; break;
     case 'atomReset': resetCurrentMode(); break;
@@ -7357,6 +8258,7 @@ function setMode(mode) {
   mode8Group.visible = mode === 8;
   mode9Group.visible = mode === 9;
   mode11Group.visible = mode === 11;
+  mode12Group.visible = mode === 12;
   stars.visible = mode !== 5 && mode !== 7 && mode !== 10;
   if (mode === 7 && state.journey) { state.journey = false; layoutMode7(); }
   if (mode === 10 && !state.journey) { layoutMode10(); }                        // w przestrzeni międzygalaktycznej nie ma pobliskich gwiazd
@@ -7377,13 +8279,14 @@ function layoutMode(mode) {
   if (mode === 9) layoutMode9();
   if (mode === 10) layoutMode10();
   if (mode === 11) layoutMode11();
+  if (mode === 12) layoutMode12();
 }
 
 // Suwak: pozycja trafienia na pasku -> prędkość
-function sliderFromUV(uv) {
-  const b = menuButtons.find(x => x.id === 'speed');
-  const x = uv.x * MENU_CANVAS_W;
-  setScaleSpeedFromFraction((x - (b.x + 30)) / (b.w - 60));
+function sliderFromUV(uv, b = menuButtons.find(x => x.id === 'speed')) {
+  const x = uv.x * MENU_CANVAS_W, f = (x - (b.x + 30)) / (b.w - 60);
+  if (b.drag) { b.drag(THREE.MathUtils.clamp(f, 0, 1)); return; }
+  setScaleSpeedFromFraction(f);
 }
 
 // PC: przy powrocie do trybu obracaj kamerę wokół jego środka
@@ -7395,6 +8298,7 @@ function focusOrbitOnMode(mode) {
   if (mode === 8) orbitControls.target.copy(stRoot.position);
   if (mode === 9) orbitControls.target.copy(sr.origin);
   if (mode === 11) orbitControls.target.copy(atom.group.position);
+  if (mode === 12) orbitControls.target.copy(hist.root.position);
   const shelf = shelfFor(mode);
   if (shelf) {
     const c = new THREE.Vector3();
@@ -7546,7 +8450,7 @@ function onPressStart(ctrl, source) {
   if (ui) {                                     // interfejs ma pierwszeństwo przed chwytaniem
     ctrl.userData.uiPress = source;
     if (ui.kind === 'tab') setMenuHidden(false);
-    else if (ui.button && ui.button.id === 'speed') { state.sliderCtrl = ctrl; sliderFromUV(ui.hit.uv); }
+    else if (ui.button && (ui.button.id === 'speed' || ui.button.drag)) { state.sliderCtrl = ctrl; state.sliderBtn = ui.button; sliderFromUV(ui.hit.uv, ui.button); }
     else if (ui.button) { if (source === 'select') onMenuButton(ui.button); }
     else if (startGrab(menuMesh, ctrl, MENU_GRAB)) ctrl.userData.grabSource = source;   // tło panelu = uchwyt
     return;
@@ -7580,6 +8484,11 @@ function onPressStart(ctrl, source) {
     setRayFromController(ctrl);
     _sphere.set(atom.group.position, 0.4 * atom.group.scale.x);
     if (raycaster.ray.intersectsSphere(_sphere) || raycaster.ray.origin.distanceTo(atom.group.position) < 0.5 * atom.group.scale.x) grabbed = startGrab(atom.group, ctrl, ATOM_GRAB);
+  }
+  else if (mode === 12) {
+    // chwyć scenę (z daleka też) – obróć ją albo przesuń
+    _sphere.set(hist.root.position, 0.6 * hist.root.scale.x);
+    if (raycaster.ray.intersectsSphere(_sphere)) grabbed = startGrab(hist.root, ctrl, HIST_GRAB);
   }
   else if (mode === 6) { if (source === 'select') scaleFocusClick(raycaster.ray.origin.clone(), raycaster.ray.direction.clone()); return; }
   else if (mode === 8) {
@@ -7628,6 +8537,8 @@ function onButtonDown(ctrl, index) {
   if (state.mode === 3 && hand === 'right' && index === RESET_BUTTON) togglePersonPick();
   if (state.mode === 6 && hand === 'right' && index === KNIFE_BUTTON) scaleJump(1);
   if (state.mode === 6 && hand === 'right' && index === RESET_BUTTON) scaleJump(-1);
+  if (state.mode === 12 && hand === 'right' && index === KNIFE_BUTTON) histSetPlaying(!state.hist.playing);
+  if (state.mode === 12 && hand === 'right' && index === RESET_BUTTON) histStep(1);
 }
 
 // Gałka w Trybie 5: powiększanie/pomniejszanie całego kosmosu wokół głowy
@@ -7741,7 +8652,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   else if (!ui && state.mode === 6) scaleFocusClick(raycaster.ray.origin.clone(), raycaster.ray.direction.clone());
   else if (!ui && state.mode === 2 && state.surfPick) surfaceAction(raycaster.ray.origin.clone(), raycaster.ray.direction.clone());
   else if (!ui && state.mode === 3 && state.m3Pick) { const P = pickPerson(raycaster.ray.origin.clone(), raycaster.ray.direction.clone()); if (P) startFollow(P); }
-  else if (ui && ui.button && ui.button.id === 'speed') sliderFromUV(ui.hit.uv);
+  else if (ui && ui.button && (ui.button.id === 'speed' || ui.button.drag)) sliderFromUV(ui.hit.uv, ui.button);
   else if (ui && ui.button) onMenuButton(ui.button);
 });
 renderer.domElement.addEventListener('dblclick', e => {
@@ -7761,6 +8672,11 @@ window.addEventListener('keydown', e => {
   if (state.mode === 9 && '123456'.includes(e.key) && e.key !== '') setSrSpeed(SR_SPEEDS[+e.key - 1]);
   if (state.mode === 9 && key === 'w') toggleSrShip();
   if (state.mode === 11 && '1234567'.includes(e.key) && e.key !== '') atomSet({ kind: 'orbital', orb: Object.keys(ATOM_ORBITALS)[+e.key - 1], variant: 0 });
+  if (state.mode === 12 && e.key === ' ') histSetPlaying(!state.hist.playing);
+  if (state.mode === 12 && e.key === 'ArrowLeft') histStep(-1);
+  if (state.mode === 12 && e.key === 'ArrowRight') histStep(1);
+  if (state.mode === 12 && e.key === 'Home') { histSeek(0); histSetPlaying(true); }
+  if (state.mode === 12 && (e.key === '.' || e.key === ',')) { const i = HIST_SPEEDS.indexOf(state.hist.speed) + (e.key === '.' ? 1 : -1); state.hist.speed = HIST_SPEEDS[THREE.MathUtils.clamp(i, 0, HIST_SPEEDS.length - 1)]; drawMenu(); }
   if (state.mode === 11 && key === 'v') atomSet({ variant: state.atom.variant + 1 });
   if (state.mode === 11 && key === 'b') { state.atom.bohr = !state.atom.bohr; drawMenu(); }
   if (state.mode === 11 && e.key === 'ArrowLeft') atom.group.rotateOnWorldAxis(UP, 0.2);
@@ -7897,6 +8813,9 @@ function updateStatus(time) {
       : `1 m w goglach = ${formatMeters(Math.pow(10, state.scaleLog))}  ·  ${nearestScaleItem().def.name}  ·  ${state.fps} FPS`;
   } else if (mode === 11) {
     text = `${atom.info[0]}  ·  ${state.fps} FPS`;
+  } else if (mode === 12) {
+    const H = state.hist, i = Math.min(HIST.length - 1, Math.floor(H.p));
+    text = `Historia atomu  ·  rozdział ${i + 1}/${HIST.length}  ·  tempo ×${String(H.speed).replace('.', ',')}${H.playing ? '' : '  ·  pauza'}  ·  ${state.fps} FPS`;
   } else if (mode === 10) {
     const L = state.mwLog;
     text = `1 m w goglach = ${formatMeters(M_PER_LY / Math.pow(10, L))}  ·  ${journeyFocusText(L)}  ·  ${state.fps} FPS`;
@@ -7977,6 +8896,7 @@ renderer.setAnimationLoop((time, frame) => {
     if (state.mode === 3 && presenting) stickFollow(ctrl, dt);
     if (state.mode === 8 && presenting) stickST(ctrl, dt);
     if (state.mode === 11 && presenting) stickAtom(ctrl, dt);
+    if (state.mode === 12 && presenting) stickHist(ctrl, dt);
     const knifeHand = isKnifeHand(ctrl);
     ctrl.userData.ray.visible = presenting && !knifeHand;
     ctrl.userData.rayDot.visible = false;
@@ -8015,7 +8935,7 @@ renderer.setAnimationLoop((time, frame) => {
   if (state.sliderCtrl) {                            // przeciąganie suwaka prędkości
     setRayFromController(state.sliderCtrl);
     const ui = raycastUI();
-    if (ui && ui.kind === 'menu') sliderFromUV(ui.hit.uv);
+    if (ui && ui.kind === 'menu') sliderFromUV(ui.hit.uv, state.sliderBtn);
   }
   if (hovered !== state.hoveredButton) { state.hoveredButton = hovered; drawMenu(); }
 
@@ -8055,6 +8975,9 @@ renderer.setAnimationLoop((time, frame) => {
   } else if (state.mode === 11) {
     updateMode11(dt);
     updateHeadlight(mode11Light);
+  } else if (state.mode === 12) {
+    updateMode12(dt);
+    updateHeadlight(mode12Light);
   } else if (state.mode === 9) {
     updateMode9(dt);
     updateHeadlight(mode9Light);
@@ -8082,5 +9005,5 @@ window.solar = {
   setMode, startFocus, cutItem, glueAll, startGrab, endGrab, updateGrabs, grabs, zoomSystemAround,
   setKnife, updateKnife, tryKnifeCut, grabShelf, setMenuHidden, onPressStart, onPressEnd, startBehavior, startFollow, stopFollow, m3Extras, m3Features, setM3Zoom, rotateM3Planet, m3CosmosParts,
   m3W, m3StartEvent, m3EndEvent, setM3Temperature, m3Atmo,
-  models, scaleItems, scaleJump, scaleZoom, m3Surface, layoutMode, mwGoTo, mwZoom, mw, stObjects, stRoot, toggleSheet, mwPath, stProbes, toggleProbes, toggleInside, sr, setSrSpeed, toggleSrShip, srShip, journey, layoutMode10, surfaceAction, atom, atomSet, m3Ride, enterSurface, exitSurface, scaleFocusClick, turnAroundFocus, pitchSystem,
+  models, scaleItems, scaleJump, scaleZoom, m3Surface, layoutMode, mwGoTo, mwZoom, mw, stObjects, stRoot, toggleSheet, mwPath, stProbes, toggleProbes, toggleInside, sr, setSrSpeed, toggleSrShip, srShip, journey, layoutMode10, surfaceAction, atom, atomSet, hist, HIST, histSeek, histSetPlaying, m3Ride, enterSurface, exitSurface, scaleFocusClick, turnAroundFocus, pitchSystem,
 };
