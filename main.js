@@ -3280,6 +3280,7 @@ function rotateM3Planet(q) {
 }
 // co klatkę: doba planety (gdy jej nie trzymasz), układ słoneczny wokół miejsca, w którym "lecisz" razem z planetą
 function updateM3Frame(dt) {
+  if (state.m3Ride) { if (MODE3_PLANET_SPIN_DEG_S) m3True.multiply(_gq.setFromAxisAngle(UP, MODE3_PLANET_SPIN_DEG_S * DEG * dt)); return; }   // lot rakietą ustawia widok sam
   const held = grabs.has(m3Planet);
   if (held) m3True.copy(m3View).invert().multiply(m3Planet.quaternion);   // obrót z ręki
   else if (MODE3_PLANET_SPIN_DEG_S) m3True.multiply(_gq.setFromAxisAngle(UP, MODE3_PLANET_SPIN_DEG_S * DEG * dt));
@@ -3422,7 +3423,7 @@ function updatePeople(dt) {
 //   tornado, tsunami, uderzenie meteorytu. Zmiany rzeźby (góry, krater, zastygła lawa) zostają do "Reset".
 // =====================================================================
 const M3_TEMPS = [-30, 15, 40, 80, 300];
-const M3_EVENTS = ['quake', 'volcano', 'tornado', 'tsunami', 'meteor', 'rocket', 'greenhouse'];
+const M3_EVENTS = ['quake', 'volcano', 'tornado', 'tsunami', 'meteor', 'rocket', 'astronaut', 'greenhouse'];
 const M3_TEMP_NOTES = {
   '-30': 'Epoka lodowa (−30°C): oceany zamarzły, ląd pod śniegiem',
   15: '',
@@ -4258,6 +4259,22 @@ const M3_SCENARIOS = {
     },
   },
 
+  // Lot rakietą: to samo co "Rakieta", ale jesteś w środku (kabina); po locie wracasz na swoje miejsce
+  astronaut: {
+    dur: 27,
+    start(ev) { M3_SCENARIOS.rocket.start(ev); m3RideStart(ev); },
+    update(ev, dt) {
+      const note = M3_SCENARIOS.rocket.update(ev, dt);
+      m3RideUpdate(ev, dt);
+      const T = ev.time;
+      return T < 5 ? `Siedzisz w rakiecie na wyrzutni – start za ${Math.ceil(5 - T)}…`
+        : T < 10 ? 'Start! Planeta zostaje w dole, przelatujesz przez chmury i atmosferę'
+        : T < 18 ? 'Jesteś na orbicie: pod Tobą przesuwa się planeta, niebo jest czarne'
+        : T < ev.dur - 2 ? 'Silnik znów pracuje – odlatujesz w daleki kosmos, planeta maleje' : note;
+    },
+    end(ev) { m3RideEnd(); },
+  },
+
   // Efekt cieplarniany: CO₂ rośnie, ciepło (czerwone) coraz częściej wraca na planetę, robi się gorąco
   greenhouse: {
     dur: 28,
@@ -4309,6 +4326,88 @@ const M3_SCENARIOS = {
   },
 };
 
+
+// ---------- Widok z rakiety: planeta jest powiększona i ustawiona tak, że kabina rakiety jest w Twojej głowie;
+// "w dół" = w stronę planety, "przód" = kierunek lotu. Gwiazdy i Słońce obracają się razem z planetą.
+const M3_RIDE_SCALE = 40;
+const m3Ride = { cabin: null, board: null, saved: null, eye: new THREE.Vector3(), fwd: new THREE.Vector3(), prev: new THREE.Vector3(), first: true };
+function m3BuildCabin() {
+  const g = new THREE.Group();
+  const frame = new THREE.MeshStandardMaterial({ color: 0x3a4250, metalness: 0.6, roughness: 0.4 });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.05, 12, 48), frame);
+  ring.position.set(0, 0.05, -0.8);
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, 0.3), frame);
+  panel.position.set(0, -0.55, -0.55);
+  panel.rotation.x = -0.5;
+  g.add(ring, panel);
+  for (let i = 0; i < 6; i++) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.02, 0.04), new THREE.MeshBasicMaterial({ color: [0x40ff80, 0xffc040, 0x40a0ff][i % 3] }));
+    b.position.set(-0.3 + i * 0.12, -0.5, -0.5);
+    b.rotation.x = -0.5;
+    g.add(b);
+  }
+  m3Ride.board = makeTextBoard(900, 2, '#bfe8ff');
+  m3Ride.board.sprite.position.set(0, -0.36, -0.75);
+  const h = 0.75 * Math.tan(3 * DEG);
+  m3Ride.board.sprite.scale.set(h * m3Ride.board.sprite.userData.aspect, h, 1);
+  g.add(m3Ride.board.sprite);
+  g.visible = false;
+  mode3Group.add(g);
+  return g;
+}
+function m3RideStart(ev) {
+  cancelAllGrabs();
+  if (state.follow) stopFollow();
+  if (!m3Ride.cabin) m3Ride.cabin = m3BuildCabin();
+  m3Ride.saved = { pos: m3Planet.position.clone(), q: m3Planet.quaternion.clone(), s: m3Planet.scale.x };
+  m3Ride.eye.copy(eyePos);
+  m3Ride.fwd.copy(horizontalForward());
+  m3Ride.cabin.position.copy(eyePos);
+  m3Ride.cabin.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), m3Ride.fwd);
+  m3Ride.cabin.visible = true;
+  m3Ride.first = true;
+  m3Ride.prev.copy(ev.rocket.position);
+  ev.rocket.visible = false;                     // jesteś w środku
+  ev.trail.visible = false;
+  state.m3Ride = ev;
+}
+const _rq1 = new THREE.Quaternion(), _rq2 = new THREE.Quaternion(), _rm = new THREE.Matrix4();
+const _ru = new THREE.Vector3(), _rf = new THREE.Vector3(), _rr = new THREE.Vector3(), _rp = new THREE.Vector3();
+function m3RideUpdate(ev, dt) {
+  const S = M3_RIDE_SCALE, p = ev.rocket.position;
+  const up = _ru.copy(p).normalize();
+  let f = _rf.copy(p).sub(m3Ride.prev);
+  m3Ride.prev.copy(p);
+  f.addScaledVector(up, -f.dot(up));
+  if (f.lengthSq() < 1e-14) f.copy(ev.t).addScaledVector(up, -ev.t.dot(up));
+  f.normalize();
+  // obrót: (prawo, góra, tył) rakiety -> (prawo, góra, tył) Twojej głowy
+  _rq1.setFromRotationMatrix(_rm.makeBasis(_rr.crossVectors(f, up).normalize(), up, f.clone().negate()));
+  const fw = m3Ride.fwd;
+  _rq2.setFromRotationMatrix(_rm.makeBasis(_rp.crossVectors(fw, UP).normalize(), UP, fw.clone().negate()));
+  const Q = _rq2.multiply(_rq1.invert());
+  if (m3Ride.first) { m3Planet.quaternion.copy(Q); m3Ride.first = false; }
+  else m3Planet.quaternion.slerp(Q, Math.min(1, dt * 4));
+  m3Planet.scale.setScalar(S);
+  // kabina (czubek rakiety) w Twojej głowie
+  const cockpit = _rp.copy(p).addScaledVector(up, 0.022).multiplyScalar(S).applyQuaternion(m3Planet.quaternion);
+  m3Planet.position.copy(m3Ride.eye).sub(cockpit);
+  m3Planet.updateMatrixWorld(true);
+  // gwiazdy, Słońce i inne planety obracają się razem z planetą (wiernie: dzień i noc się zgadzają)
+  m3Cosmos.position.copy(m3Planet.position);
+  m3Cosmos.quaternion.copy(m3Planet.quaternion).multiply(_rq1.copy(m3True).invert()).multiply(m3Base.cosmosQ);
+  const alt = (p.length() - ev.Rs) / M3_R * 6371;
+  m3Ride.board.setText([`Wysokość: ${Math.max(0, alt).toFixed(0)} km (gdyby planeta była Ziemią)`, ev.time < 5 ? 'Odliczanie…' : ev.time < 18 ? 'Silnik: ' + (ev.flame.material.opacity > 0.3 ? 'PRACUJE' : 'wyłączony') : 'Kurs: daleki kosmos']);
+}
+function m3RideEnd() {
+  if (!state.m3Ride) return;
+  state.m3Ride = null;
+  const sv = m3Ride.saved;
+  if (sv) { m3Planet.position.copy(sv.pos); m3Planet.quaternion.copy(sv.q); m3Planet.scale.setScalar(sv.s); }
+  m3Cosmos.position.copy(m3Base.center);
+  m3Cosmos.quaternion.multiplyQuaternions(m3View, m3Base.cosmosQ);
+  if (m3Ride.cabin) m3Ride.cabin.visible = false;
+}
 
 function m3StartEvent(type) {
   if (state.mode !== 3 || !m3WorldInit()) return;
@@ -5737,7 +5836,7 @@ for (const m of mw.mats.glow) m.userData.baseOpacity = m.opacity;
 const J_EARTH_R = 6.371e6;
 const J_LOG_MAX = Math.log10(M_PER_LY / J_SCALE_START_M);        // 1 m w goglach = J_SCALE_START_M m naprawdę
 const J_LOG_MIN = Math.log10(MODE5_SCALE_MIN * 1e-6);            // najmocniejsze oddalenie Trybu 5 (sieć kosmiczna)
-const J_BELOW_FROM = 8.8, J_BELOW_TO = 9.9;                       // tu Ziemia przechodzi z "przed Tobą" na "pod Tobą"
+const J_BELOW_FROM = 8.7, J_BELOW_TO = 9.15;                      // tu punkt centralny przechodzi z człowieka na całą Ziemię
 const J_COSMOS_LOG = Math.log10(MODE5_SCALE_MAX * 1e-6);             // dalej: pełna scena z Trybu 5 (galaktyki, sieć, tło)
 state.journey = false;
 const journey = (() => {
@@ -5858,10 +5957,8 @@ function updateJourney(dt, L, s, w, w2, Rk, piv, sAU) {
   J.earthWrap.position.copy(C);
   J.earthWrap.scale.setScalar(Rk);
   J.earthWrap.visible = L > 3 && L < 11.4;          // bliżej – grunt (czasza) w pełnej rozdzielczości
-  // stopy człowieka: punkt Ziemi najbliższy miejscu na podłodze przed Tobą
-  const H = _jD.copy(state.jEye).addScaledVector(state.mwFwd, MW_DISTANCE_M);
-  H.y = state.jFloorY;
-  const n = _jN.copy(H).sub(C).normalize();
+  // stopy człowieka: "szczyt" Ziemi (nad środkiem)
+  const n = _jN.set(0, 1, 0);
   const S = _jB.copy(C).addScaledVector(n, Rk);
   J.layer.position.copy(S);
   J.layer.scale.setScalar(k);
@@ -5924,6 +6021,7 @@ state.mwSpeed = MW_ZOOM_RATE;
 const MW_LOG_MIN = Math.log10(0.6 / 100000), MW_LOG_MAX = Math.log10(MW_SCALE_MAX);
 // state.mwLog = log10(m/rok św.); w = jak daleko punkt zoomu przesunął się ze Słońca do Ziemi
 function mwPath(u) {
+  if (state.journey) return { L: u, w: 1 };            // Tryb 10: od Ziemi do końca punktem centralnym jest Ziemia
   return { L: u, w: THREE.MathUtils.smoothstep(u, MW_TO_EARTH_FROM, MW_TO_EARTH_TO) };
 }
 
@@ -5989,6 +6087,10 @@ function journeyCosmos(dt) {
   }
   if (!state.jCosmos) { state.jCosmos = true; mode7Group.visible = false; mode5Group.visible = true; layoutMode5(); }
   setUniverseScale(Math.pow(10, state.mwLog + 6));
+  // Droga Mleczna zostaje w punkcie zoomu (na środku widoku)
+  universe.updateMatrixWorld(true);
+  universe.position.add(_jA.copy(mwPivot).sub(universe.localToWorld(_jB.copy(journey.mwPosInWeb))));
+  universe.updateMatrixWorld(true);
   updateGalaxies(dt);
 }
 function updateMode7(dt) {
@@ -6008,15 +6110,11 @@ function updateMode7(dt) {
   let w2 = 0, Rk = 0;
   if (state.journey) {
     Rk = J_EARTH_R * s / M_PER_LY;
-    const t = THREE.MathUtils.smoothstep(L, J_BELOW_FROM, J_BELOW_TO);   // 0 = przed Tobą, 1 = pod Tobą
-    if (t > 0) {
-      const E = state.jEye;
-      const d0 = _jC.copy(mwPivot).sub(E), d0len = d0.length();
-      const dirC = _jE.copy(d0).normalize().lerp(_jD.set(0, -1, 0), t).normalize();
-      const hF = E.y - state.jFloorY;
-      const D = Math.max(THREE.MathUtils.lerp(d0len, Rk + hF, t), Rk + 0.35);
-      piv.add(_jC.copy(E).addScaledVector(dirC, D).sub(mwPivot));   // środek Ziemi tutaj
-    }
+    // człowiek (stopy) w punkcie zoomu – na środku widoku – aż widać całą Ziemię; potem środek Ziemi.
+    // Ziemia leży pod punktem zoomu, więc nigdy nie przelatujesz przez jej wnętrze.
+    const f = THREE.MathUtils.smoothstep(L, J_BELOW_FROM, J_BELOW_TO);   // 0 = środek Ziemi, 1 = człowiek
+    const toFloor = (mwPivot.y - state.jFloorY) * THREE.MathUtils.smoothstep(L, 13.5, 15.5);   // 1:1 – grunt na podłodze
+    piv.addScaledVector(UP, -(Rk * f + toFloor));
   }
   const place = (g, focusLocal, scale) => {
     g.quaternion.copy(mwQuat);
@@ -6790,20 +6888,268 @@ function updateSrShip(dt) {
 }
 
 // =====================================================================
+//  TRYB 11: ATOM – chmury prawdopodobieństwa elektronów (orbitale)
+//   Każdy punkt to jedno możliwe miejsce elektronu, losowane z |ψ|² (funkcje falowe atomu wodoru:
+//   część radialna z wielomianów Laguerre'a, część kątowa – rzeczywiste harmoniki sferyczne).
+//   Kolor: znak funkcji falowej (niebieski +, pomarańczowy −). Pierwiastki: orbitale zajęte wg konfiguracji,
+//   rozmiary z efektywnym ładunkiem jądra (reguły Slatera). Dla porównania: stary, planetarny model Bohra.
+// =====================================================================
+const mode11Group = new THREE.Group();
+mode11Group.visible = false;
+scene.add(mode11Group);
+const mode11Light = makeHeadlight(mode11Group);
+const ATOM_ORBITALS = {
+  '1s': { n: 1, l: 0, variants: ['s'] },
+  '2s': { n: 2, l: 0, variants: ['s'] },
+  '2p': { n: 2, l: 1, variants: ['pz', 'px', 'py'] },
+  '3s': { n: 3, l: 0, variants: ['s'] },
+  '3p': { n: 3, l: 1, variants: ['pz', 'px', 'py'] },
+  '3d': { n: 3, l: 2, variants: ['dz²', 'dxz', 'dyz', 'dxy', 'dx²−y²'] },
+  '4f': { n: 4, l: 3, variants: ['fz³', 'fxz²', 'fyz²', 'fxyz', 'fz(x²−y²)', 'fx(x²−3y²)', 'fy(3x²−y²)'] },
+};
+// część kątowa (rzeczywiste harmoniki sferyczne, bez stałych) dla kierunku (x, y, z)
+const ATOM_ANGULAR = {
+  s: () => 1, pz: (x, y, z) => z, px: x => x, py: (x, y) => y,
+  'dz²': (x, y, z) => 3 * z * z - 1, dxz: (x, y, z) => x * z, dyz: (x, y, z) => y * z, dxy: (x, y) => x * y, 'dx²−y²': (x, y) => x * x - y * y,
+  'fz³': (x, y, z) => z * (5 * z * z - 3), 'fxz²': (x, y, z) => x * (5 * z * z - 1), 'fyz²': (x, y, z) => y * (5 * z * z - 1), fxyz: (x, y, z) => x * y * z,
+  'fz(x²−y²)': (x, y, z) => z * (x * x - y * y), 'fx(x²−3y²)': (x, y) => x * (x * x - 3 * y * y), 'fy(3x²−y²)': (x, y) => y * (3 * x * x - y * y),
+};
+const ATOM_FACTS = {
+  s: 'Orbital s: kula – elektron może być w każdym kierunku jednakowo',
+  p: 'Orbital p: dwie „krople” – w płaszczyźnie przez jądro elektronu nigdy nie ma (węzeł)',
+  d: 'Orbital d: cztery płatki (albo „hantla” z pierścieniem) – dwie płaszczyzny węzłowe',
+  f: 'Orbital f: sześć–osiem płatków – takie orbitale mają np. lantanowce',
+};
+// pierwiastki: [symbol, nazwa, Z, neutrony, konfiguracja [[n, l, elektrony], ...]]
+const ATOM_ELEMENTS = [
+  ['H', 'Wodór', 1, 0, [[1, 0, 1]]], ['He', 'Hel', 2, 2, [[1, 0, 2]]], ['Li', 'Lit', 3, 4, [[1, 0, 2], [2, 0, 1]]],
+  ['C', 'Węgiel', 6, 6, [[1, 0, 2], [2, 0, 2], [2, 1, 2]]], ['O', 'Tlen', 8, 8, [[1, 0, 2], [2, 0, 2], [2, 1, 4]]],
+  ['Ne', 'Neon', 10, 10, [[1, 0, 2], [2, 0, 2], [2, 1, 6]]], ['Na', 'Sód', 11, 12, [[1, 0, 2], [2, 0, 2], [2, 1, 6], [3, 0, 1]]],
+];
+const ATOM_POINTS = 26000;
+state.atom = { kind: 'orbital', orb: '2p', variant: 0, el: 'C', bohr: false };
+
+function laguerre(k, a, x) {                       // uogólniony wielomian Laguerre'a L_k^a(x)
+  if (k === 0) return 1;
+  let l0 = 1, l1 = 1 + a - x;
+  for (let i = 1; i < k; i++) { const l2 = ((2 * i + 1 + a - x) * l1 - (i + a) * l0) / (i + 1); l0 = l1; l1 = l2; }
+  return l1;
+}
+const atomRadial = (n, l, Z, r) => { const rho = 2 * Z * r / n; return Math.pow(rho, l) * Math.exp(-rho / 2) * laguerre(n - l - 1, 2 * l + 1, rho); };
+// losowanie punktów z |ψ|²: promień z rozkładu r²R² (dystrybuanta), kierunek – metodą odrzucania z |Y|²
+function sampleOrbital(n, l, variant, Z, count, rnd = Math.random) {
+  const rMax = (2.5 * n * n + 6 * n) / Z, G = 1500, cdf = new Float64Array(G + 1);
+  for (let i = 1; i <= G; i++) { const r = rMax * i / G, R = atomRadial(n, l, Z, r); cdf[i] = cdf[i - 1] + r * r * R * R; }
+  const total = cdf[G];
+  const Y = ATOM_ANGULAR[variant];
+  let ymax = 0;
+  for (let i = 0; i < 3000; i++) {
+    const u = rnd() * 2 - 1, t = rnd() * Math.PI * 2, s = Math.sqrt(1 - u * u), v = Y(s * Math.cos(t), s * Math.sin(t), u);
+    ymax = Math.max(ymax, v * v);
+  }
+  ymax *= 1.05;
+  const out = [];
+  let r90 = 0;
+  for (let i = 0; i <= G; i++) if (cdf[i] >= 0.9 * total) { r90 = rMax * i / G; break; }
+  while (out.length < count) {
+    const q = rnd() * total;
+    let lo = 0, hi = G;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cdf[m] < q) lo = m; else hi = m; }
+    const r = rMax * (lo + rnd()) / G;
+    let x, y, z, yv;
+    for (;;) {
+      const u = rnd() * 2 - 1, t = rnd() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+      x = s * Math.cos(t); y = s * Math.sin(t); z = u;
+      yv = Y(x, y, z);
+      if (rnd() * ymax <= yv * yv) break;
+    }
+    const sign = Math.sign(atomRadial(n, l, Z, r) * yv) || 1;
+    out.push({ x: x * r, y: z * r, z: y * r, sign });             // oś z orbitalu = pionowo
+  }
+  return { pts: out, r90 };
+}
+// efektywny ładunek jądra (reguły Slatera, uproszczone)
+function slaterZ(Z, config, n) {
+  const count = k => config.filter(c => c[0] === k).reduce((a, c) => a + c[2], 0);
+  let sh = 0.35 * (count(n) - 1) * (n === 1 ? 0.3 / 0.35 : 1);   // ta sama powłoka
+  if (n >= 2) sh += 0.85 * count(n - 1);                          // powłoka niżej
+  for (let k = 1; k < n - 1; k++) sh += count(k);                 // jeszcze niżej – pełne ekranowanie
+  return Math.max(1, Z - sh);
+}
+const atom = (() => {
+  const group = new THREE.Group();
+  mode11Group.add(group);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ATOM_POINTS * 3), 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(ATOM_POINTS * 3), 3));
+  const cloud = new THREE.Points(geo, new THREE.PointsMaterial({ size: 2.2, sizeAttenuation: false, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.85 }));
+  cloud.frustumCulled = false;
+  const nucleus = new THREE.Group();
+  const electron = makeGlowSprite(0xffffff, 0.035, 1);
+  const bohr = new THREE.Group();
+  group.add(cloud, nucleus, electron, bohr);
+  const label = makeTextBoard(1500, 2);
+  mode11Group.add(label.sprite);
+  return { group, cloud, geo, nucleus, electron, bohr, label, samples: [], scale: 1, flashT: 0, info: ['', ''] };
+})();
+const ATOM_COLORS = { pos: new THREE.Color(0x4fa8ff), neg: new THREE.Color(0xff9a3a), shell: [new THREE.Color(0xfff0c0), new THREE.Color(0x60b0ff), new THREE.Color(0x60ff90)] };
+function buildNucleus(Z, N) {
+  const g = atom.nucleus;
+  while (g.children.length) g.remove(g.children[0]);
+  const prot = new THREE.MeshStandardMaterial({ color: 0xe04030, roughness: 0.5 }), neut = new THREE.MeshStandardMaterial({ color: 0xb8b8c0, roughness: 0.5 });
+  const total = Z + N, rnd = seededRandom('nuc' + Z);
+  const R = 0.08 * Math.cbrt(total);
+  for (let i = 0; i < total; i++) {
+    const m = new THREE.Mesh(sphereGeometry, i < Z ? prot : neut);
+    m.scale.setScalar(0.08);
+    if (total > 1) { const v = new THREE.Vector3(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize().multiplyScalar(R * Math.cbrt(rnd())); m.position.copy(v); }
+    g.add(m);
+  }
+}
+// zbuduj chmurę dla bieżącego wyboru
+function rebuildAtom() {
+  const A = state.atom;
+  const samples = [];
+  let rOuter = 1, title, line2;
+  if (A.kind === 'orbital') {
+    const o = ATOM_ORBITALS[A.orb], v = o.variants[A.variant % o.variants.length];
+    const res = sampleOrbital(o.n, o.l, v, 1, ATOM_POINTS);
+    for (const p of res.pts) samples.push({ ...p, col: p.sign > 0 ? ATOM_COLORS.pos : ATOM_COLORS.neg });
+    rOuter = res.r90;
+    buildNucleus(1, 0);
+    title = `Orbital ${A.orb}${o.variants.length > 1 ? ' (' + v + ')' : ''} – atom wodoru`;
+    line2 = ATOM_FACTS['spdf'[o.l]];
+  } else {
+    const e = ATOM_ELEMENTS.find(x => x[0] === A.el), [sym, name, Z, N, config] = e;
+    const totalE = config.reduce((a, c) => a + c[2], 0);
+    for (const [n, l, ne] of config) {
+      const zEff = slaterZ(Z, config, n);
+      const vars = l === 0 ? ['s'] : ['pz', 'px', 'py'];
+      // elektrony p rozkładają się po orbitalach px, py, pz (reguła Hunda)
+      const occ = l === 0 ? [ne] : [0, 1, 2].map(i => (ne > i ? 1 : 0) + (ne > i + 3 ? 1 : 0));
+      vars.forEach((v, i) => {
+        if (!occ[i]) return;
+        const cnt = Math.round(ATOM_POINTS * occ[i] / totalE);
+        const res = sampleOrbital(n, l, v, zEff, cnt);
+        for (const p of res.pts) samples.push({ ...p, col: ATOM_COLORS.shell[n - 1] });
+        rOuter = Math.max(rOuter, res.r90);
+      });
+    }
+    buildNucleus(Z, N);
+    const sup = { 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶' };
+    title = `${name} (${sym}): ${Z} protonów, ${N} neutronów, ${totalE} elektronów`;
+    line2 = 'Konfiguracja: ' + config.map(([n, l, ne]) => `${n}${'spdf'[l]}${sup[ne]}`).join(' ') + '  ·  kolory: powłoka 1, 2, 3';
+  }
+  // skala: 90% chmury mieści się w kuli o promieniu ok. 0,32 m
+  atom.scale = 0.32 / rOuter;
+  const pos = atom.geo.attributes.position.array, col = atom.geo.attributes.color.array;
+  for (let i = 0; i < ATOM_POINTS; i++) {
+    const p = samples[i % samples.length];
+    pos[i * 3] = p.x * atom.scale; pos[i * 3 + 1] = p.y * atom.scale; pos[i * 3 + 2] = p.z * atom.scale;
+    col[i * 3] = p.col.r; col[i * 3 + 1] = p.col.g; col[i * 3 + 2] = p.col.b;
+  }
+  atom.geo.attributes.position.needsUpdate = atom.geo.attributes.color.needsUpdate = true;
+  atom.samples = samples;
+  atom.nucleus.scale.setScalar(0.08);                            // jądro powiększone – naprawdę jest ok. 100 000× mniejsze od atomu
+  buildBohr(rOuter);
+  atom.info = [title, line2];
+  drawMenu();
+}
+// model Bohra: elektrony krążą po okręgach (stary, planetarny obraz atomu – dla porównania)
+function buildBohr(rOuter) {
+  const g = atom.bohr;
+  while (g.children.length) g.remove(g.children[0]);
+  const A = state.atom;
+  const shells = A.kind === 'element'
+    ? (() => { const cfg = ATOM_ELEMENTS.find(x => x[0] === A.el)[4], m = {}; for (const [n, , e] of cfg) m[n] = (m[n] || 0) + e; return Object.entries(m).map(([n, e]) => [+n, e]); })()
+    : [[ATOM_ORBITALS[A.orb].n, 1]];
+  const maxN = Math.max(...shells.map(s => s[0]));
+  g.userData.electrons = [];
+  g.rotation.set(1.0, 0, 0.15);                                    // pochylony do Ciebie – widać okręgi, nie kreski
+  for (const [n, e] of shells) {
+    const r = 0.32 * (n * n) / (maxN * maxN) * 0.9 + 0.04;
+    g.add(makeCircleLineXZ(r, 96, 0x9fb8ff, 0.6));
+    for (let k = 0; k < e; k++) {
+      const el = new THREE.Mesh(sphereGeometry, new THREE.MeshBasicMaterial({ color: ATOM_COLORS.shell[n - 1] }));
+      el.scale.setScalar(0.012);
+      el.userData = { r, a: k / e * Math.PI * 2, w: 2.2 / n, tilt: n * 0.6 };
+      g.add(el);
+      g.userData.electrons.push(el);
+    }
+  }
+}
+function layoutMode11() {
+  const fwd = horizontalForward();
+  atom.group.position.copy(eyePos).addScaledVector(fwd, 0.9);
+  atom.group.position.y = eyePos.y - 0.08;
+  atom.group.quaternion.identity();
+  atom.group.scale.setScalar(1);
+  rebuildAtom();
+  if (!renderer.xr.isPresenting) orbitControls.target.copy(atom.group.position);
+}
+function atomSet(changes) { Object.assign(state.atom, changes); rebuildAtom(); }
+const ATOM_GRAB = { minScale: 0.3, maxScale: 6, oneHand: 'remote' };
+function updateMode11(dt) {
+  const A = state.atom;
+  atom.cloud.visible = !A.bohr;
+  atom.bohr.visible = A.bohr;
+  atom.electron.visible = !A.bohr;
+  // "błysk" elektronu: co chwilę w innym miejscu chmury – tam, gdzie akurat byśmy go zmierzyli
+  atom.flashT -= dt;
+  if (atom.flashT <= 0 && atom.samples.length) {
+    atom.flashT = 0.12;
+    const p = atom.samples[Math.floor(Math.random() * atom.samples.length)];
+    atom.electron.position.set(p.x * atom.scale, p.y * atom.scale, p.z * atom.scale);
+  }
+  // chmura "migocze": część punktów co klatkę dostaje nowe losowe położenie
+  const pos = atom.geo.attributes.position.array, col = atom.geo.attributes.color.array, S = atom.samples;
+  if (S.length && !A.bohr) {
+    for (let k = 0; k < 400; k++) {
+      const i = Math.floor(Math.random() * ATOM_POINTS), p = S[Math.floor(Math.random() * S.length)];
+      pos[i * 3] = p.x * atom.scale; pos[i * 3 + 1] = p.y * atom.scale; pos[i * 3 + 2] = p.z * atom.scale;
+      col[i * 3] = p.col.r; col[i * 3 + 1] = p.col.g; col[i * 3 + 2] = p.col.b;
+    }
+    atom.geo.attributes.position.needsUpdate = atom.geo.attributes.color.needsUpdate = true;
+  }
+  for (const el of atom.bohr.userData.electrons || []) {
+    const u = el.userData;
+    u.a += u.w * dt;
+    el.position.set(Math.cos(u.a) * u.r, 0, Math.sin(u.a) * u.r);
+  }
+  if (!grabs.has(atom.group)) atom.group.rotateY(dt * 0.15);
+  atom.label.setText(A.bohr ? [atom.info[0], 'Model Bohra (1913): elektrony na torach jak planety – dziś wiemy, że to chmury'] : atom.info, ['#ffe9a8', '#ffffff']);
+  placeBoard(atom.label, _v1.copy(atom.group.position).addScaledVector(UP, -0.5 * atom.group.scale.x - 0.1), 0, 2.6);
+}
+function stickAtom(ctrl, dt) {
+  const gp = ctrl.userData.inputSource && ctrl.userData.inputSource.gamepad;
+  if (!gp || gp.axes.length <= ZOOM_STICK_AXIS) return;
+  const x = gp.axes[ZOOM_STICK_AXIS - 1], y = gp.axes[ZOOM_STICK_AXIS];
+  if (Math.abs(x) > STICK_DEADZONE) atom.group.rotateOnWorldAxis(UP, -x * 70 * DEG * dt);
+  if (Math.abs(y) > STICK_DEADZONE) atom.group.scale.setScalar(THREE.MathUtils.clamp(atom.group.scale.x * Math.pow(2, -y * dt), 0.3, 6));
+}
+
+// =====================================================================
 //  MENU (panel z przyciskami, rysowany na canvas) – przesuwane i chowane
 // =====================================================================
 const MENU_CANVAS_W = 1024, MENU_CANVAS_H = 730;
 // wysokość narysowanej części panelu (tryby z dodatkowymi rzędami przycisków mają wyższy panel)
-const menuUsedH = () => ({ 3: 716, 2: 588, 8: 588, 9: 588 }[state.mode] || 460);
+const menuUsedH = () => ({ 3: 716, 11: 716, 2: 588, 8: 588, 9: 588 }[state.mode] || 460);
 const MENU_HEIGHT_M = MENU_WIDTH_M * MENU_CANVAS_H / MENU_CANVAS_W;
-const MODE_NAMES = { 1: 'Model', 2: 'Planety', 3: 'Ludziki', 4: 'Obiekty', 5: 'Kosmos', 6: 'Skala', 7: 'Galaktyka', 8: 'Grawitacja', 9: 'Światło', 10: 'Podróż' };
+const MODE_NAMES = { 1: 'Model', 2: 'Planety', 3: 'Ludziki', 4: 'Obiekty', 5: 'Kosmos', 6: 'Skala', 7: 'Galaktyka', 8: 'Grawitacja', 9: 'Światło', 10: 'Podróż', 11: 'Atom' };
 const menuButtons = [
   { id: 'hide', label: 'Schowaj ✕', x: 760, y: 18, w: 246, h: 70, small: true },
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(m => ({ id: 'mode' + m, label: 'Tryb ' + m, sub: MODE_NAMES[m], x: 18 + (m - 1) * 99, y: 196, w: 94, h: 120, small: true, font: 'bold 24px system-ui, sans-serif', subFont: '17px system-ui, sans-serif' })),
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(m => ({ id: 'mode' + m, label: 'Tryb ' + m, sub: MODE_NAMES[m], x: 18 + (m - 1) * 90, y: 196, w: 85, h: 120, small: true, font: 'bold 21px system-ui, sans-serif', subFont: '15px system-ui, sans-serif' })),
+  // Tryb 11: orbitale, warianty, pierwiastki, model Bohra
+  ...Object.keys(ATOM_ORBITALS).map((o, i) => ({ id: 'orb_' + o, label: o, x: 18 + i * 141, y: 332, w: 135, h: 112, modes: [11], small: true, active: () => state.atom.kind === 'orbital' && state.atom.orb === o })),
+  { id: 'atomVar', label: () => { const o = ATOM_ORBITALS[state.atom.orb]; return state.atom.kind === 'orbital' && o.variants.length > 1 ? 'Kształt: ' + o.variants[state.atom.variant % o.variants.length] : 'Kształt ↻'; },
+    x: 18, y: 456, w: 200, h: 116, modes: [11], small: true, font: 'bold 24px system-ui, sans-serif' },
+  ...ATOM_ELEMENTS.map((e, i) => ({ id: 'el_' + e[0], label: e[0], sub: e[1], x: 230 + i * 111, y: 456, w: 105, h: 116, modes: [11], small: true, subFont: '19px system-ui, sans-serif', active: () => state.atom.kind === 'element' && state.atom.el === e[0] })),
+  { id: 'atomBohr', label: () => (state.atom.bohr ? 'Chmury (model kwantowy)' : 'Model Bohra (stary)'), x: 18, y: 588, w: 490, h: 116, modes: [11], small: true },
+  { id: 'atomReset', label: 'Reset', x: 518, y: 588, w: 488, h: 116, modes: [11], small: true },
   // Tryb 3: temperatura i scenariusze
   ...M3_TEMPS.map((T, i) => ({ id: 'temp' + T, label: T === -30 ? 'Lód −30°C' : T + '°C', x: 18 + i * 199, y: 456, w: 191, h: 116, modes: [3], small: true, font: 'bold 32px system-ui, sans-serif', active: () => m3W.T === T })),
-  ...M3_EVENTS.map((e, i) => ({ id: 'ev_' + e, label: { quake: 'Płyty', volcano: 'Wulkan', tornado: 'Tornado', tsunami: 'Tsunami', meteor: 'Meteoryt', rocket: 'Rakieta', greenhouse: 'Cieplarnia' }[e],
-    x: 18 + i * 141, y: 588, w: 135, h: 116, modes: [3], small: true, font: 'bold 26px system-ui, sans-serif', active: () => !!(m3W.event && m3W.event.type === e) })),
+  ...M3_EVENTS.map((e, i) => ({ id: 'ev_' + e, label: { quake: 'Płyty', volcano: 'Wulkan', tornado: 'Tornado', tsunami: 'Tsunami', meteor: 'Meteoryt', rocket: 'Rakieta', astronaut: 'Astronauta', greenhouse: 'Cieplarnia' }[e],
+    x: 18 + i * 124, y: 588, w: 118, h: 116, modes: [3], small: true, font: 'bold 22px system-ui, sans-serif', active: () => !!(m3W.event && m3W.event.type === e) })),
   { id: 'mwAll', label: '◀ Cała Galaktyka', x: 18, y: 332, w: 262, h: 112, modes: [7], small: true },
   { id: 'mwSun', label: 'Do Ziemi ▶', x: 744, y: 332, w: 262, h: 112, modes: [7], small: true },
   { id: 'reset', label: 'Reset', x: 18, y: 332, w: 300, h: 112, modes: [2, 3, 4, 5, 8] },
@@ -6842,6 +7188,7 @@ const MENU_HINTS = {
   7: 'Gałka/2 ręce: Galaktyka → Słońce → Ziemia · suwak: prędkość lotu',
   8: 'Spust: chwyć obiekt i włóż w siatkę · gałka: obróć siatkę · sondy: porównaj upływ czasu',
   10: 'Gałka/2 ręce: od człowieka do całego kosmosu i z powrotem · suwak: prędkość',
+  11: 'Wybierz orbital albo pierwiastek · spust: obracaj atom · gałka/2 ręce: obrót i powiększenie',
   9: 'Prędkość: statek się skraca, jego zegar tyka wolniej · „Widok z pokładu”: tak widzi kosmos załoga',
 };
 const [menuCanvas, menuCtx] = makeCanvas(MENU_CANVAS_W, MENU_CANVAS_H);
@@ -6933,6 +7280,8 @@ function menuButtonAtUV(uv) {
 function onMenuButton(button) {
   if (!button) return;
   if (button.id.startsWith('sr') && !isNaN(+button.id.slice(2))) { setSrSpeed(+button.id.slice(2)); return; }
+  if (button.id.startsWith('orb_')) { atomSet({ kind: 'orbital', orb: button.id.slice(4), variant: 0 }); return; }
+  if (button.id.startsWith('el_')) { atomSet({ kind: 'element', el: button.id.slice(3) }); return; }
   if (button.id.startsWith('temp')) { setM3Temperature(+button.id.slice(4)); return; }
   if (button.id.startsWith('ev_')) { m3StartEvent(button.id.slice(3)); return; }
   switch (button.id) {
@@ -6959,6 +7308,10 @@ function onMenuButton(button) {
     case 'jAll': mwGoTo(J_LOG_MIN); break;
     case 'jHuman': mwGoTo(J_LOG_MAX); break;
     case 'mode10': setMode(10); break;
+    case 'mode11': setMode(11); break;
+    case 'atomVar': if (state.atom.kind === 'orbital') atomSet({ variant: state.atom.variant + 1 }); break;
+    case 'atomBohr': state.atom.bohr = !state.atom.bohr; break;
+    case 'atomReset': resetCurrentMode(); break;
     case 'prev': scaleJump(-1); break;
     case 'timeSlow': state.timeIndex = Math.max(0, state.timeIndex - 1); state.timePaused = false; break;
     case 'timeFast': state.timeIndex = Math.min(TIME_SPEEDS.length - 1, state.timeIndex + 1); state.timePaused = false; break;
@@ -6986,6 +7339,7 @@ function setMode(mode) {
   if (state.follow && mode !== 3) { state.follow = null; state.m3Pick = false; layoutMode3(); }
   if (state.surf && mode !== 2) exitSurface();
   if (state.srShip && mode !== 9) toggleSrShip();
+  if (state.m3Ride && mode !== 3) m3EndEvent();
   state.surfPick = false;
   state.mode = mode;
   cancelAllGrabs();
@@ -7002,6 +7356,7 @@ function setMode(mode) {
   state.jCosmos = false;
   mode8Group.visible = mode === 8;
   mode9Group.visible = mode === 9;
+  mode11Group.visible = mode === 11;
   stars.visible = mode !== 5 && mode !== 7 && mode !== 10;
   if (mode === 7 && state.journey) { state.journey = false; layoutMode7(); }
   if (mode === 10 && !state.journey) { layoutMode10(); }                        // w przestrzeni międzygalaktycznej nie ma pobliskich gwiazd
@@ -7021,6 +7376,7 @@ function layoutMode(mode) {
   if (mode === 8) layoutMode8();
   if (mode === 9) layoutMode9();
   if (mode === 10) layoutMode10();
+  if (mode === 11) layoutMode11();
 }
 
 // Suwak: pozycja trafienia na pasku -> prędkość
@@ -7038,6 +7394,7 @@ function focusOrbitOnMode(mode) {
   if (mode === 7 || mode === 10) orbitControls.target.copy(mwPivot);
   if (mode === 8) orbitControls.target.copy(stRoot.position);
   if (mode === 9) orbitControls.target.copy(sr.origin);
+  if (mode === 11) orbitControls.target.copy(atom.group.position);
   const shelf = shelfFor(mode);
   if (shelf) {
     const c = new THREE.Vector3();
@@ -7214,10 +7571,16 @@ function onPressStart(ctrl, source) {
       if (source === 'select') { const P = pickPerson(raycaster.ray.origin.clone(), raycaster.ray.direction.clone()); if (P) startFollow(P); }
       return;
     }
-    if (state.follow) return;                    // podczas śledzenia planety nie chwytamy
+    if (state.follow || state.m3Ride) return;    // podczas śledzenia / lotu rakietą planety nie chwytamy
     grabbed = grabMode3(ctrl);
   }
   else if (mode === 5 || mode === 7 || mode === 10) { state.m5Hands.add(ctrl); state.m5Pinch = null; return; }
+  else if (mode === 11) {
+    // chwyć atom (z daleka też) – obraca się tak, jak obracasz dłoń; dwie ręce – powiększanie
+    setRayFromController(ctrl);
+    _sphere.set(atom.group.position, 0.4 * atom.group.scale.x);
+    if (raycaster.ray.intersectsSphere(_sphere) || raycaster.ray.origin.distanceTo(atom.group.position) < 0.5 * atom.group.scale.x) grabbed = startGrab(atom.group, ctrl, ATOM_GRAB);
+  }
   else if (mode === 6) { if (source === 'select') scaleFocusClick(raycaster.ray.origin.clone(), raycaster.ray.direction.clone()); return; }
   else if (mode === 8) {
     const o = pickST(raycaster.ray.origin.clone(), raycaster.ray.direction.clone());
@@ -7397,6 +7760,11 @@ window.addEventListener('keydown', e => {
   if (state.mode === 8 && key === 's') toggleSheet();
   if (state.mode === 9 && '123456'.includes(e.key) && e.key !== '') setSrSpeed(SR_SPEEDS[+e.key - 1]);
   if (state.mode === 9 && key === 'w') toggleSrShip();
+  if (state.mode === 11 && '1234567'.includes(e.key) && e.key !== '') atomSet({ kind: 'orbital', orb: Object.keys(ATOM_ORBITALS)[+e.key - 1], variant: 0 });
+  if (state.mode === 11 && key === 'v') atomSet({ variant: state.atom.variant + 1 });
+  if (state.mode === 11 && key === 'b') { state.atom.bohr = !state.atom.bohr; drawMenu(); }
+  if (state.mode === 11 && e.key === 'ArrowLeft') atom.group.rotateOnWorldAxis(UP, 0.2);
+  if (state.mode === 11 && e.key === 'ArrowRight') atom.group.rotateOnWorldAxis(UP, -0.2);
   if (state.mode === 9 && e.key === ' ') { state.srPaused = !state.srPaused; drawMenu(); }
   if (state.mode === 9 && key === 'r') srResetClocks();
   if (state.mode === 8 && key === 'i') toggleInside();
@@ -7406,7 +7774,7 @@ window.addEventListener('keydown', e => {
   if (state.mode === 8 && e.key === 'ArrowRight') stRoot.quaternion.premultiply(_q2.setFromAxisAngle(UP, -0.2));
   if (state.mode === 2 && key === 'v') { setRayFromMouse(); surfaceAction(raycaster.ray.origin.clone(), raycaster.ray.direction.clone()); }
   if (state.mode === 3 && !state.follow && (e.key === '+' || e.key === '=')) setM3Zoom(m3Planet.scale.x * 1.5);
-  if (state.mode === 3 && '1234567'.includes(e.key) && e.key !== '') m3StartEvent(M3_EVENTS[+e.key - 1]);
+  if (state.mode === 3 && '12345678'.includes(e.key) && e.key !== '') m3StartEvent(M3_EVENTS[+e.key - 1]);
   if (state.mode === 3 && key === 't') setM3Temperature(M3_TEMPS[(M3_TEMPS.indexOf(m3W.T) + 1) % M3_TEMPS.length]);
   if (state.mode === 3 && !state.follow && e.key === '-') setM3Zoom(m3Planet.scale.x / 1.5);
   if (state.mode === 3 && e.key === 'ArrowLeft') rotateM3Planet(_q2.setFromAxisAngle(UP, -0.2));
@@ -7527,6 +7895,8 @@ function updateStatus(time) {
   } else if (mode === 6) {
     text = state.m6Focus ? `Obracasz się wokół: ${state.m6Focus.def.name} (gałka ◀ ▶, spust = puść)  ·  ${state.fps} FPS`
       : `1 m w goglach = ${formatMeters(Math.pow(10, state.scaleLog))}  ·  ${nearestScaleItem().def.name}  ·  ${state.fps} FPS`;
+  } else if (mode === 11) {
+    text = `${atom.info[0]}  ·  ${state.fps} FPS`;
   } else if (mode === 10) {
     const L = state.mwLog;
     text = `1 m w goglach = ${formatMeters(M_PER_LY / Math.pow(10, L))}  ·  ${journeyFocusText(L)}  ·  ${state.fps} FPS`;
@@ -7606,6 +7976,7 @@ renderer.setAnimationLoop((time, frame) => {
     if ((state.mode === 7 || state.mode === 10) && presenting) stickGalaxy(ctrl, dt);
     if (state.mode === 3 && presenting) stickFollow(ctrl, dt);
     if (state.mode === 8 && presenting) stickST(ctrl, dt);
+    if (state.mode === 11 && presenting) stickAtom(ctrl, dt);
     const knifeHand = isKnifeHand(ctrl);
     ctrl.userData.ray.visible = presenting && !knifeHand;
     ctrl.userData.rayDot.visible = false;
@@ -7681,6 +8052,9 @@ renderer.setAnimationLoop((time, frame) => {
     updateScaleMode(dt);
     updateScaleFocus(dt);
     updateHeadlight(mode6Light);
+  } else if (state.mode === 11) {
+    updateMode11(dt);
+    updateHeadlight(mode11Light);
   } else if (state.mode === 9) {
     updateMode9(dt);
     updateHeadlight(mode9Light);
@@ -7708,5 +8082,5 @@ window.solar = {
   setMode, startFocus, cutItem, glueAll, startGrab, endGrab, updateGrabs, grabs, zoomSystemAround,
   setKnife, updateKnife, tryKnifeCut, grabShelf, setMenuHidden, onPressStart, onPressEnd, startBehavior, startFollow, stopFollow, m3Extras, m3Features, setM3Zoom, rotateM3Planet, m3CosmosParts,
   m3W, m3StartEvent, m3EndEvent, setM3Temperature, m3Atmo,
-  models, scaleItems, scaleJump, scaleZoom, m3Surface, layoutMode, mwGoTo, mwZoom, mw, stObjects, stRoot, toggleSheet, mwPath, stProbes, toggleProbes, toggleInside, sr, setSrSpeed, toggleSrShip, srShip, journey, layoutMode10, surfaceAction, enterSurface, exitSurface, scaleFocusClick, turnAroundFocus, pitchSystem,
+  models, scaleItems, scaleJump, scaleZoom, m3Surface, layoutMode, mwGoTo, mwZoom, mw, stObjects, stRoot, toggleSheet, mwPath, stProbes, toggleProbes, toggleInside, sr, setSrSpeed, toggleSrShip, srShip, journey, layoutMode10, surfaceAction, atom, atomSet, m3Ride, enterSurface, exitSurface, scaleFocusClick, turnAroundFocus, pitchSystem,
 };

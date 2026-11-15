@@ -3,7 +3,7 @@
 Interaktywny Układ Słoneczny w goglach VR, działający w przeglądarce **Meta Quest Browser**.
 Nie trzeba nic instalować w goglach: wystarczy otworzyć stronę i kliknąć **ENTER VR**.
 
-Dziesięć trybów (przełączane na panelu menu):
+Jedenaście trybów (przełączane na panelu menu):
 
 - **Tryb 1 – Model:** cały układ do orbity Plutona w prawdziwej skali, z księżycami i pierścieniami.
   Planety krążą po eliptycznych orbitach (prawa Keplera) i obracają się wokół osi, księżyce krążą wokół planet.
@@ -25,7 +25,8 @@ Dziesięć trybów (przełączane na panelu menu):
   w domach), 300°C (jak Wenus); chmury i atmosfera (poświata wokół planety) zmieniają się razem z temperaturą.
   **Scenariusze:** zderzenie płyt tektonicznych (rosną góry) i trzęsienie ziemi, erupcja wulkanu (lawa spływa
   i stygnie), tornado, tsunami, meteoryt (najpierw kilka sekund ostrzeżenia: tor lotu i miejsce uderzenia),
-  start rakiety (znacznik, odliczanie, orbita, ucieczka w kosmos), efekt cieplarniany (CO₂ zatrzymuje ciepło).
+  start rakiety (znacznik, odliczanie, orbita, ucieczka w kosmos), **Astronauta** (ten sam lot z wnętrza kabiny
+  rakiety; po locie wracasz na swoje miejsce), efekt cieplarniany (CO₂ zatrzymuje ciepło).
   Ludziki reagują: patrzą na zdarzenie, chowają się w domach, uciekają pod górę przed tsunami, przychodzą
   popatrzeć na start rakiety i machają.
   Ludziki idą po rzeźbie terenu (góry, doliny) i omijają morza. Na planecie są 3 wioski z domkami (większość
@@ -70,8 +71,14 @@ Dziesięć trybów (przełączane na panelu menu):
 - **Tryb 10 – Podróż:** jedna ciągła skala od człowieka (1 m = 1 m) do całego kosmosu: człowiek i autobus →
   wieża Eiffla → Mount Everest na zakrzywionej Ziemi → cała Ziemia (Everest to na niej ułamek milimetra) →
   Księżyc → Układ Słoneczny → najbliższe gwiazdy → Droga Mleczna → Grupa Lokalna (Andromeda) → sieć kosmiczna.
-  Duża Ziemia leży pod Tobą i przy oddalaniu maleje pod stopami; dalej niż Droga Mleczna włącza się (skokiem)
-  pełna scena z Trybu 5 – wszystkie galaktyki, sieć kosmiczna i tło.
+  Na środku widoku jest cały czas człowiek (aż widać całą Ziemię), potem Ziemia – do samego końca; Ziemia leży
+  pod Tobą, więc nigdy nie przelatujesz przez jej wnętrze. Dalej niż Droga Mleczna włącza się (skokiem)
+  pełna scena z Trybu 5 – wszystkie galaktyki, sieć kosmiczna i tło (Droga Mleczna na środku).
+- **Tryb 11 – Atom:** chmury prawdopodobieństwa elektronów. Orbitale 1s, 2s, 2p, 3s, 3p, 3d, 4f (z wariantami
+  kształtu, np. pz/px/py), każdy punkt to jedno możliwe położenie elektronu wylosowane z |ψ|² (funkcje falowe
+  atomu wodoru); kolor = znak funkcji falowej. Pierwiastki H, He, Li, C, O, Ne, Na – zajęte orbitale wg
+  konfiguracji (kolor = powłoka). Biały błysk pokazuje, gdzie „zmierzylibyśmy” elektron w danej chwili.
+  Dla porównania stary model Bohra (elektrony na torach jak planety).
 
 Ziemia we wszystkich trybach to model 3D z teksturą (`models/earth.glb`).
 
@@ -182,6 +189,15 @@ Napis pod obiektami podaje skalę, np. „1 m w goglach = 2,9 m naprawdę”.
 |---|---|
 | Od człowieka do kosmosu i z powrotem | **gałka** góra/dół, oba spusty i rozsuwanie dłoni, albo przyciski **◀ Cały kosmos** / **Człowiek ▶** |
 | Prędkość | **suwak** w menu |
+
+### Tryb 11 – Atom
+
+| Akcja | Jak |
+|---|---|
+| Orbital | przyciski 1s … 4f (na PC: **1–7**); „Kształt” zmienia wariant (np. pz → px → py; na PC: **V**) |
+| Pierwiastek | przyciski H, He, Li, C, O, Ne, Na |
+| Obracaj / powiększ | **spust** na atomie i obracaj dłonią; **gałka** lewo/prawo = obrót, góra/dół = powiększenie; dwie ręce |
+| Model Bohra / chmury | przycisk w menu (na PC: **B**) |
 
 Na panelu menu widać skalę i **FPS** (cel: 72).
 
