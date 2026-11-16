@@ -8401,19 +8401,519 @@ function drawHistTimeline(ctx, b) {
 }
 
 // =====================================================================
+//  TRYB 13: CZWARTY WYMIAR – bryły 4D, które można wziąć do ręki
+//   Każdy punkt bryły ma 4 współrzędne (x, y, z, w). Z naszego 3D świata można ją „oglądać” na dwa sposoby:
+//   • PRZEKRÓJ – to, co naprawdę zobaczyłby człowiek: część bryły leżąca w naszej przestrzeni (w = 0),
+//     jak płaski stwór widzi tylko przekrój sześcianu przechodzącego przez jego płaszczyznę;
+//   • CIEŃ – rzut 4D → 3D (jak cień sześcianu na ścianie); kolor mówi, gdzie punkt leży w 4. wymiarze.
+//   Obroty w płaszczyznach z W (XW, YW, ZW) nie mają odpowiednika w 3D – zmieniają kształt przekroju.
+// =====================================================================
+const mode13Group = new THREE.Group();
+mode13Group.visible = false;
+scene.add(mode13Group);
+const mode13Light = makeHeadlight(mode13Group);
+const T4_SIZE_M = 0.22;            // promień bryły 4D (od środka do wierzchołka) w goglach [m]
+const T4_DISTANCE_M = 0.85;        // bryła tak daleko przed oczami [m]
+const T4_EYE_W = 4;                // „oko” cienia w 4. wymiarze (w promieniach bryły): mniej = mocniejsza perspektywa
+const T4_W_MAX = 1.5;              // zakres przesuwania w 4. wymiarze (w promieniach bryły)
+const T4_SPIN = 0.6;               // prędkość obrotu z przycisków [rad/s]
+const T4_STICK_ACCEL = 2.5;        // gałka rozpędza obrót 4D [rad/s²]
+const T4_SPIN_DAMP = 0.35;         // jak szybko gaśnie obrót nadany gałką (rozpęd) [1/s]
+const T4_GRAB = { minScale: 0.4, maxScale: 3, oneHand: 'remote' };
+const T4_VIEWS = ['Przekrój', 'Cień', 'Oba'];
+// płaszczyzny obrotu (w 4D obraca się WOKÓŁ PŁASZCZYZNY, a nie wokół osi): numery współrzędnych x=0, y=1, z=2, w=3
+const T4_PLANES = { xy: [0, 1], xz: [0, 2], yz: [1, 2], xw: [0, 3], yw: [1, 3], zw: [2, 3] };
+const T4_AUTO = { xw: { xw: 1 }, yw: { yw: 1 }, zw: { zw: 1 }, double: { xy: 1, zw: 1 } };
+state.t4 = { shape: 0, view: 2, w: 0, M: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], auto: 'xw', om: { xw: 0, yw: 0, zw: 0 },
+  demo: null, demoT: 0, demoAuto: true, faces: 0, dirty: false, menuT: 0 };
+
+const dot4 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+const T4_SHAPES = (() => {
+  const norm = list => { const r = Math.max(...list.map(v => Math.hypot(...v))); return list.map(v => v.map(x => x / r)); };
+  const signs4 = () => { const out = []; for (let i = 0; i < 16; i++) out.push([0, 1, 2, 3].map(b => (i >> b & 1 ? 1 : -1))); return out; };
+  const axes = []; for (let i = 0; i < 4; i++) for (const s of [1, -1]) { const v = [0, 0, 0, 0]; v[i] = s; axes.push(v); }
+  const s5 = 1 / Math.sqrt(5);
+  const five = [[1, 1, 1, -s5], [1, -1, -1, -s5], [-1, 1, -1, -s5], [-1, -1, 1, -s5], [0, 0, 0, 4 * s5]];
+  const c24 = [];
+  for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) for (const a of [1, -1]) for (const b of [1, -1]) { const v = [0, 0, 0, 0]; v[i] = a; v[j] = b; c24.push(v); }
+  const S = [
+    { short: 'Tesserakt', name: 'Tesserakt (hipersześcian)', verts: norm(signs4()), cells: axes, squares: true,
+      facts: '16 wierzchołków · 32 krawędzie · 24 kwadraty · 8 sześcianów (komórek)',
+      note: 'Każda ściana przekroju to kawałek innego z 8 sześcianów, z których zbudowany jest tesserakt' },
+    { short: '5-komórka', name: 'Hiperczworościan (5-komórka)', verts: norm(five), cells: five.map(v => v.map(x => -x)),
+      facts: '5 wierzchołków · 10 krawędzi · 10 trójkątów · 5 czworościanów',
+      note: 'Najprostsza bryła 4D: każdy wierzchołek jest połączony z każdym' },
+    { short: '16-komórka', name: '16-komórka (hiperośmiościan)', verts: axes, cells: signs4(),
+      facts: '8 wierzchołków · 24 krawędzie · 32 trójkąty · 16 czworościanów',
+      note: 'Odpowiednik ośmiościanu: po dwa wierzchołki na każdej z 4 osi (x, y, z i w)' },
+    { short: '24-komórka', name: '24-komórka', verts: norm(c24), cells: [...axes, ...signs4()],
+      facts: '24 wierzchołki · 96 krawędzi · 96 trójkątów · 24 ośmiościany',
+      note: 'Nie ma odpowiednika w 3D – taka foremna bryła istnieje tylko w 4 wymiarach' },
+    { short: 'Hipersfera', name: 'Hipersfera (kula 4D)', sphere: true,
+      facts: 'wszystkie punkty w tej samej odległości od środka – w 4 kierunkach',
+      note: 'Okręgi Hopfa: każde dwa są splecione jak ogniwa łańcucha, choć żadne się nie przecinają' },
+  ];
+  const d4 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3]);
+  for (const s of S) {
+    if (s.sphere) continue;
+    const V4 = s.verts, n = V4.length;
+    let dmin = Infinity;
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) dmin = Math.min(dmin, d4(V4[i], V4[j]));
+    const adj = new Set();
+    s.edges = [];
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (d4(V4[i], V4[j]) < dmin * 1.001) { s.edges.push([i, j]); adj.add(i + ',' + j); }
+    const nb = (i, j) => adj.has(Math.min(i, j) + ',' + Math.max(i, j));
+    s.faces = [];                                                      // ściany 2D (do półprzezroczystego cienia)
+    if (s.squares) {
+      for (let p = 0; p < 4; p++) for (let q = p + 1; q < 4; q++) {
+        const o = [0, 1, 2, 3].filter(k => k !== p && k !== q);
+        for (const a of [1, -1]) for (const b of [1, -1]) {
+          const find = (sp, sq) => V4.findIndex(v => Math.sign(v[p]) === sp && Math.sign(v[q]) === sq && Math.sign(v[o[0]]) === a && Math.sign(v[o[1]]) === b);
+          s.faces.push([find(-1, -1), find(1, -1), find(1, 1), find(-1, 1)]);
+        }
+      }
+    } else {
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) for (let k = j + 1; k < n; k++) if (nb(i, j) && nb(j, k) && nb(i, k)) s.faces.push([i, j, k]);
+    }
+    // komórki (ściany 3D): kierunek na zewnątrz i odległość od środka
+    s.cells = s.cells.map(c => { const l = Math.hypot(...c), u = c.map(x => x / l); return { n: u, h: Math.max(...V4.map(v => dot4(u, v))) }; });
+    s.colors = s.cells.map((c, i) => new THREE.Color().setHSL((i * 0.618 + 0.05) % 1, 0.62, 0.56));
+  }
+  return S;
+})();
+
+// okręgi Hopfa na hipersferze: 3 „torusy Clifforda” po 12 okręgów
+const T4_FIB = 36, T4_FIB_SEG = 64;
+const T4_FIB_PTS = (() => {
+  const P = new Float32Array(T4_FIB * T4_FIB_SEG * 4);
+  for (let f = 0; f < T4_FIB; f++) {
+    const eta = [0.36, 0.785, 1.21][Math.floor(f / 12)], ph = (f % 12) / 12 * Math.PI * 2 + Math.floor(f / 12) * 0.26;
+    for (let s = 0; s < T4_FIB_SEG; s++) {
+      const t = s / T4_FIB_SEG * Math.PI * 2, o = (f * T4_FIB_SEG + s) * 4;
+      P[o] = Math.cos(eta) * Math.cos(t); P[o + 1] = Math.cos(eta) * Math.sin(t);
+      P[o + 2] = Math.sin(eta) * Math.cos(t + ph); P[o + 3] = Math.sin(eta) * Math.sin(t + ph);
+    }
+  }
+  return P;
+})();
+
+const t4 = (() => {
+  const root = new THREE.Group();                            // to chwytasz ręką
+  mode13Group.add(root);
+  const obj = new THREE.Group();                             // bryła: 1 jednostka = promień bryły
+  obj.scale.setScalar(T4_SIZE_M);
+  root.add(obj);
+  const inst = (geo, mat, count) => {
+    const m = new THREE.InstancedMesh(geo, mat, count);
+    m.frustumCulled = false;
+    m.count = 0;
+    m.setColorAt(0, new THREE.Color(1, 1, 1));
+    return m;
+  };
+  const tube = new THREE.CylinderGeometry(1, 1, 1, 7, 1, true);
+  // cień: krawędzie, wierzchołki, półprzezroczyste ściany
+  const edges = inst(tube, new THREE.MeshStandardMaterial({ roughness: 0.45, emissive: 0x222222 }), 96);
+  const verts = inst(sphereGeometry, new THREE.MeshStandardMaterial({ roughness: 0.35, emissive: 0x333333 }), 24);
+  const fGeo = new THREE.BufferGeometry();
+  fGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(300 * 3), 3));
+  fGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(300 * 3), 3));
+  const faces = new THREE.Mesh(fGeo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false }));
+  faces.frustumCulled = false;
+  // przekrój: kolorowa bryła (każda ściana = kawałek innej komórki) + ciemne obrysy
+  const SL = 3000;
+  const sGeo = new THREE.BufferGeometry();
+  for (const a of ['position', 'normal', 'color']) sGeo.setAttribute(a, new THREE.BufferAttribute(new Float32Array(SL * 3), 3));
+  const slice = new THREE.Mesh(sGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+  slice.frustumCulled = false;
+  const outline = inst(tube, new THREE.MeshBasicMaterial({ color: 0x141a2c }), 400);
+  obj.add(faces, edges, verts, slice, outline);
+  // hipersfera: przekrój = kula, cień = okręgi Hopfa, kropki = gdzie okręgi przebijają naszą przestrzeń
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 32), new THREE.MeshStandardMaterial({ color: 0x4fb4f0, roughness: 0.4, transparent: true, opacity: 0.8, depthWrite: false }));
+  const hGeo = new THREE.BufferGeometry();
+  hGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(T4_FIB * T4_FIB_SEG * 6), 3));
+  hGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(T4_FIB * T4_FIB_SEG * 6), 3));
+  const fibers = new THREE.LineSegments(hGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }));
+  fibers.frustumCulled = false;
+  const dots = inst(sphereGeometry, new THREE.MeshBasicMaterial(), 96);
+  obj.add(ball, fibers, dots);
+
+  // pokaz „Pudełko”: kulka 4D wyjęta z zamkniętego pudełka bez otwierania go
+  const box = new THREE.Group();
+  root.add(box);
+  const BOX = 0.36;
+  const boxMesh = new THREE.Mesh(new THREE.BoxGeometry(BOX, BOX, BOX), new THREE.MeshStandardMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.13, depthWrite: false, side: THREE.DoubleSide }));
+  const boxEdges = new THREE.LineSegments(new THREE.EdgesGeometry(boxMesh.geometry), new THREE.LineBasicMaterial({ color: 0xbfe6ff }));
+  const pBall = new THREE.Mesh(sphereGeometry, new THREE.MeshStandardMaterial({ color: 0xffa040, roughness: 0.35 }));
+  const ghost = new THREE.Mesh(sphereGeometry, new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.35 }));
+  box.add(boxMesh, boxEdges, pBall, ghost);
+
+  // pokaz „Świat 2D”: sześcian przechodzi przez płaszczyznę – płaski stwór widzi tylko wielokąt
+  const flat = new THREE.Group();
+  root.add(flat);
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x4a70c0, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }));
+  const grid = new THREE.GridHelper(0.8, 8, 0x8fb0ff, 0x5a78b8);
+  grid.material.transparent = true; grid.material.opacity = 0.35;
+  const cube = new THREE.Group();
+  const CUBE = 0.26;
+  const cubeGeo = new THREE.BoxGeometry(CUBE, CUBE, CUBE);
+  cube.add(new THREE.Mesh(cubeGeo, new THREE.MeshStandardMaterial({ color: 0xffd080, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide })),
+    new THREE.LineSegments(new THREE.EdgesGeometry(cubeGeo), new THREE.LineBasicMaterial({ color: 0xffe0a0 })));
+  const pGeo = new THREE.BufferGeometry();
+  pGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12 * 3 * 3), 3));
+  const poly = new THREE.Mesh(pGeo, new THREE.MeshBasicMaterial({ color: 0xff6a4a, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  poly.frustumCulled = false;
+  flat.add(plane, grid, cube, poly);
+  flat.position.y = -0.12;
+  flat.rotation.x = 0.42;                                    // płaszczyzna pochylona do Ciebie – widać, co się na niej rysuje
+
+  const board = makeFitBoard(2100, 5);
+  mode13Group.add(board.sprite);
+  return { root, obj, edges, verts, faces, fGeo, slice, sGeo, outline, ball, fibers, hGeo, dots, box, BOX, boxMesh, pBall, ghost, flat, cube, CUBE, poly, pGeo, board,
+    R: new Float64Array(24 * 4), P: Array.from({ length: 24 }, () => new THREE.Vector3()), p3: new Float32Array(200 * 3), p4: new Float64Array(200 * 4) };
+})();
+
+const _t4c = new THREE.Color(), _t4d = new THREE.Color(), _t4m = new THREE.Matrix4(), _t4q = new THREE.Quaternion();
+const _t4a = new THREE.Vector3(), _t4b = new THREE.Vector3(), _t4s = new THREE.Vector3(), _t4u = new THREE.Vector3(), _t4v = new THREE.Vector3(), _t4n = new THREE.Vector3();
+const T4_Y = new THREE.Vector3(0, 1, 0), _t4e1 = new THREE.Vector3(), _t4e2 = new THREE.Vector3();
+// kolor położenia w 4. wymiarze: czerwony = ana (+W), biały = nasza przestrzeń, niebieski = kata (−W)
+function t4WColor(w, out) {
+  const t = THREE.MathUtils.clamp(w / 1.1, -1, 1);
+  return t >= 0 ? out.setRGB(1, 1 - 0.62 * t, 1 - 0.8 * t) : out.setRGB(1 + 0.72 * t, 1 + 0.4 * t, 1);
+}
+function t4Rotate(i, j, a) {                                  // obrót w płaszczyźnie (i, j) o kąt a
+  const M = state.t4.M, c = Math.cos(a), s = Math.sin(a);
+  for (let k = 0; k < 4; k++) { const x = M[i * 4 + k], y = M[j * 4 + k]; M[i * 4 + k] = c * x - s * y; M[j * 4 + k] = s * x + c * y; }
+}
+function t4Ortho() {                                          // usuwa drobne błędy zaokrągleń (macierz zostaje obrotem)
+  const M = state.t4.M;
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < i; j++) { let d = 0; for (let k = 0; k < 4; k++) d += M[i * 4 + k] * M[j * 4 + k]; for (let k = 0; k < 4; k++) M[i * 4 + k] -= d * M[j * 4 + k]; }
+    let l = 0; for (let k = 0; k < 4; k++) l += M[i * 4 + k] ** 2;
+    l = Math.sqrt(l); for (let k = 0; k < 4; k++) M[i * 4 + k] /= l;
+  }
+}
+// odcinek (walec) od a do b w InstancedMesh
+function t4Tube(mesh, i, a, b, r, color) {
+  _t4s.subVectors(b, a);
+  const len = _t4s.length();
+  _t4q.setFromUnitVectors(T4_Y, len > 1e-9 ? _t4s.divideScalar(len) : T4_Y);
+  _t4m.compose(_t4a.addVectors(a, b).multiplyScalar(0.5), _t4q, _t4b.set(r, len, r));
+  mesh.setMatrixAt(i, _t4m);
+  if (color) mesh.setColorAt(i, color);
+}
+function t4Ball(mesh, i, p, r, color) {
+  _t4m.compose(p, _t4q.identity(), _t4b.setScalar(r));
+  mesh.setMatrixAt(i, _t4m);
+  if (color) mesh.setColorAt(i, color);
+}
+function t4Done(mesh, n) {
+  mesh.count = n;
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+}
+
+function layoutMode13() {
+  const fwd = horizontalForward();
+  t4.root.position.copy(eyePos).addScaledVector(fwd, T4_DISTANCE_M);
+  t4.root.position.y = eyePos.y - 0.12;
+  t4.root.quaternion.setFromAxisAngle(UP, Math.atan2(-fwd.x, -fwd.z));
+  t4.root.scale.setScalar(1);
+  const T = state.t4;
+  T.M = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  t4Rotate(0, 2, 0.5); t4Rotate(1, 2, 0.35);                  // lekko z ukosa – od razu widać, że to bryła
+  T.w = 0; T.om = { xw: 0, yw: 0, zw: 0 }; T.auto = 'xw'; T.demo = null;
+  if (!renderer.xr.isPresenting) orbitControls.target.copy(t4.root.position);
+}
+function t4Menu(id) {
+  const T = state.t4;
+  if (id.startsWith('t4s')) { T.shape = +id.slice(3); if (T.demo !== 'pass') T.demo = null; }
+  else if (id.startsWith('t4v')) T.view = +id.slice(3);
+  else if (id.startsWith('t4r_')) { const a = id.slice(4); T.auto = T.auto === a ? null : a; if (T.demo === 'box' || T.demo === 'flat') T.demo = null; }
+  else if (id === 't4halt') { T.auto = null; T.om = { xw: 0, yw: 0, zw: 0 }; }
+  else if (id.startsWith('t4d_')) {
+    const d = id.slice(4);
+    T.demo = T.demo === d ? null : d;
+    T.demoT = 0; T.demoAuto = true;
+    if (T.demo === 'pass') { T.view = 0; T.w = -1.3; }
+    if (T.demo === 'box' || T.demo === 'flat') T.view = 2;
+    if (!T.demo) T.w = 0;
+  } else if (id === 't4reset') { cancelAllGrabs(); layoutMode13(); }
+  T.dirty = true;
+}
+function t4SetW(w) {
+  const T = state.t4;
+  T.w = Math.abs(w) < 0.04 ? 0 : THREE.MathUtils.clamp(w, -T4_W_MAX, T4_W_MAX);   // przy środku „wskakuje” w naszą przestrzeń
+  T.demoAuto = false;
+  T.dirty = true;
+}
+
+// bryła wielościenna: cień (rzut perspektywiczny 4D → 3D) i przekrój (część w naszej przestrzeni w = 0)
+function t4UpdatePoly(S, T) {
+  const M = T.M, R = t4.R, P = t4.P, D = T4_EYE_W, V4 = S.verts, n = V4.length;
+  for (let k = 0; k < n; k++) {
+    const v = V4[k];
+    for (let i = 0; i < 4; i++) R[k * 4 + i] = M[i * 4] * v[0] + M[i * 4 + 1] * v[1] + M[i * 4 + 2] * v[2] + M[i * 4 + 3] * v[3];
+    R[k * 4 + 3] += T.w;
+    const f = D / (D - R[k * 4 + 3]);
+    P[k].set(R[k * 4] * f, R[k * 4 + 1] * f, R[k * 4 + 2] * f);
+  }
+  const shadow = T.view !== 0, cut = T.view !== 1;
+  t4.edges.visible = t4.verts.visible = t4.faces.visible = shadow;
+  if (shadow) {
+    for (let k = 0; k < n; k++) t4Ball(t4.verts, k, P[k], 0.034, t4WColor(R[k * 4 + 3], _t4c));
+    t4Done(t4.verts, n);
+    S.edges.forEach(([a, b], i) => t4Tube(t4.edges, i, P[a], P[b], cut ? 0.011 : 0.014, t4WColor((R[a * 4 + 3] + R[b * 4 + 3]) / 2, _t4c)));
+    t4Done(t4.edges, S.edges.length);
+    const pos = t4.fGeo.attributes.position.array, col = t4.fGeo.attributes.color.array;
+    let o = 0;
+    const put = k => { pos[o] = P[k].x; pos[o + 1] = P[k].y; pos[o + 2] = P[k].z; t4WColor(R[k * 4 + 3], _t4c); col[o] = _t4c.r; col[o + 1] = _t4c.g; col[o + 2] = _t4c.b; o += 3; };
+    for (const f of S.faces) for (let m = 1; m < f.length - 1; m++) { put(f[0]); put(f[m]); put(f[m + 1]); }
+    t4.fGeo.setDrawRange(0, o / 3);
+    t4.fGeo.attributes.position.needsUpdate = t4.fGeo.attributes.color.needsUpdate = true;
+  }
+  // przekrój: punkty, w których krawędzie przebijają naszą przestrzeń (w = 0)
+  t4.slice.visible = t4.outline.visible = cut;
+  T.faces = 0;
+  if (!cut) return;
+  const p3 = t4.p3, p4 = t4.p4, eps = 1e-7;
+  let np = 0;
+  const add = (ka, kb, t) => {
+    for (let i = 0; i < 3; i++) p3[np * 3 + i] = R[ka * 4 + i] + t * (R[kb * 4 + i] - R[ka * 4 + i]);
+    for (let i = 0; i < 4; i++) p4[np * 4 + i] = V4[ka][i] + t * (V4[kb][i] - V4[ka][i]);
+    np++;
+  };
+  for (let k = 0; k < n; k++) if (Math.abs(R[k * 4 + 3]) <= eps) add(k, k, 0);
+  for (const [a, b] of S.edges) {
+    const wa = R[a * 4 + 3], wb = R[b * 4 + 3];
+    if ((wa > eps && wb < -eps) || (wa < -eps && wb > eps)) add(a, b, wa / (wa - wb));
+  }
+  const pos = t4.sGeo.attributes.position.array, nor = t4.sGeo.attributes.normal.array, col = t4.sGeo.attributes.color.array;
+  let o = 0, nl = 0;
+  const idx = [], ang = [];
+  S.cells.forEach((c, ci) => {
+    idx.length = 0;
+    for (let q = 0; q < np; q++) {
+      const d = c.n[0] * p4[q * 4] + c.n[1] * p4[q * 4 + 1] + c.n[2] * p4[q * 4 + 2] + c.n[3] * p4[q * 4 + 3];
+      if (Math.abs(d - c.h) < 1e-5) idx.push(q);
+    }
+    if (idx.length < 3) return;
+    // kierunek ściany w naszej przestrzeni = część xyz obróconego kierunku komórki
+    _t4n.set(0, 0, 0);
+    for (let i = 0; i < 3; i++) _t4n.setComponent(i, M[i * 4] * c.n[0] + M[i * 4 + 1] * c.n[1] + M[i * 4 + 2] * c.n[2] + M[i * 4 + 3] * c.n[3]);
+    if (_t4n.length() < 1e-4) return;
+    _t4n.normalize();
+    _t4a.set(0, 0, 0);
+    for (const q of idx) _t4a.x += p3[q * 3], _t4a.y += p3[q * 3 + 1], _t4a.z += p3[q * 3 + 2];
+    _t4a.divideScalar(idx.length);
+    _t4u.set(p3[idx[0] * 3], p3[idx[0] * 3 + 1], p3[idx[0] * 3 + 2]).sub(_t4a).normalize();
+    _t4v.crossVectors(_t4n, _t4u);
+    ang.length = 0;
+    for (const q of idx) { _t4s.set(p3[q * 3], p3[q * 3 + 1], p3[q * 3 + 2]).sub(_t4a); ang[q] = Math.atan2(_t4s.dot(_t4v), _t4s.dot(_t4u)); }
+    idx.sort((a, b) => ang[a] - ang[b]);
+    const cc = S.colors[ci];
+    const put = q => { pos[o] = p3[q * 3]; pos[o + 1] = p3[q * 3 + 1]; pos[o + 2] = p3[q * 3 + 2]; nor[o] = _t4n.x; nor[o + 1] = _t4n.y; nor[o + 2] = _t4n.z; col[o] = cc.r; col[o + 1] = cc.g; col[o + 2] = cc.b; o += 3; };
+    for (let m = 1; m < idx.length - 1 && o < (3000 - 3) * 3; m++) { put(idx[0]); put(idx[m]); put(idx[m + 1]); }
+    for (let m = 0; m < idx.length && nl < 400; m++) {
+      const qa = idx[m], qb = idx[(m + 1) % idx.length];
+      t4Tube(t4.outline, nl++, _t4e1.set(p3[qa * 3], p3[qa * 3 + 1], p3[qa * 3 + 2]), _t4e2.set(p3[qb * 3], p3[qb * 3 + 1], p3[qb * 3 + 2]), 0.007);
+    }
+    T.faces++;
+  });
+  t4Done(t4.outline, nl);
+  t4.sGeo.setDrawRange(0, o / 3);
+  for (const a of ['position', 'normal', 'color']) t4.sGeo.attributes[a].needsUpdate = true;
+}
+
+// hipersfera: przekrój = kula o promieniu √(1 − w²), cień = okręgi Hopfa
+function t4UpdateSphere(T) {
+  const M = T.M, D = T4_EYE_W, shadow = T.view !== 0, cut = T.view !== 1;
+  const r2 = 1 - T.w * T.w;
+  t4.ball.visible = cut && r2 > 1e-4;
+  if (t4.ball.visible) t4.ball.scale.setScalar(Math.sqrt(r2));
+  t4.ball.material.opacity = shadow ? 0.45 : 0.85;              // przy cieniu prześwituje – widać okręgi w środku
+  t4.fibers.visible = shadow;
+  const pos = t4.hGeo.attributes.position.array, col = t4.hGeo.attributes.color.array;
+  let o = 0, nd = 0;
+  const q = [0, 0, 0, 0], prev = [0, 0, 0, 0], first = [0, 0, 0, 0];
+  const rot = (k, out) => {
+    const x = T4_FIB_PTS[k], y = T4_FIB_PTS[k + 1], z = T4_FIB_PTS[k + 2], w = T4_FIB_PTS[k + 3];
+    for (let i = 0; i < 4; i++) out[i] = M[i * 4] * x + M[i * 4 + 1] * y + M[i * 4 + 2] * z + M[i * 4 + 3] * w;
+    out[3] += T.w;
+  };
+  const put = r => { const f = D / (D - r[3]); pos[o] = r[0] * f; pos[o + 1] = r[1] * f; pos[o + 2] = r[2] * f; t4WColor(r[3], _t4c); col[o] = _t4c.r; col[o + 1] = _t4c.g; col[o + 2] = _t4c.b; o += 3; };
+  for (let f = 0; f < T4_FIB; f++) {
+    rot(f * T4_FIB_SEG * 4, first);
+    prev.splice(0, 4, ...first);
+    for (let s = 1; s <= T4_FIB_SEG; s++) {
+      if (s < T4_FIB_SEG) rot((f * T4_FIB_SEG + s) * 4, q); else q.splice(0, 4, ...first);
+      if (shadow) { put(prev); put(q); }
+      // tu okrąg przebija naszą przestrzeń: kropka na powierzchni przekroju
+      if (cut && nd < 96 && (prev[3] > 0) !== (q[3] > 0)) {
+        const t = prev[3] / (prev[3] - q[3]);
+        t4Ball(t4.dots, nd++, _t4a.set(prev[0] + t * (q[0] - prev[0]), prev[1] + t * (q[1] - prev[1]), prev[2] + t * (q[2] - prev[2])), 0.03,
+          _t4d.setHSL([0.12, 0.38, 0.62][Math.floor(f / 12)], 0.9, 0.62));
+      }
+      prev.splice(0, 4, ...q);
+    }
+  }
+  t4Done(t4.dots, nd);
+  t4.dots.visible = cut;
+  t4.hGeo.setDrawRange(0, o / 3);
+  t4.hGeo.attributes.position.needsUpdate = t4.hGeo.attributes.color.needsUpdate = true;
+}
+
+// pokaz „Pudełko”: [czas, x, w] – kulka idzie w 4. wymiar, przechodzi „nad” ścianą i wraca do naszej przestrzeni
+const T4_BOX_KEYS = [[0, 0, 0], [2, 0, 0], [4.5, 0, 0.17], [7, 0.42, 0.17], [9.5, 0.42, 0], [12, 0.42, 0], [14.5, 0.42, -0.17], [17, 0, -0.17], [19.5, 0, 0], [21, 0, 0]];
+const T4_BOX_TEXT = [
+  [2, 'Kulka zamknięta w szczelnym pudełku', 'W 3D nie da się jej wyjąć bez otwierania pudełka'],
+  [4.5, 'Przesuwam kulkę w 4. wymiarze (ana, +W)', 'Znika z naszej przestrzeni – zostaje tylko jej „cień” (siatka)'],
+  [7, 'Teraz w bok – „nad” ścianą pudełka', 'Ściana jest tylko w naszej przestrzeni (w = 0), więc kulka jej nie dotyka'],
+  [12, 'Wraca do naszej przestrzeni – już poza pudełkiem!', 'Dla istoty 4D nasze zamknięte pudełko jest otwarte jak dla nas kwadrat narysowany na kartce'],
+  [19.5, 'I z powrotem do środka – tym razem przez kata (−W)', 'Pudełko ani na chwilę nie zostało otwarte'],
+  [99, 'Kulka znów w środku', 'Tak samo istota 4D mogłaby wyjąć coś z sejfu albo z Twojego wnętrza bez cięcia'],
+];
+const T4_POLY_NAMES = { 3: 'trójkąt', 4: 'czworokąt', 5: 'pięciokąt', 6: 'sześciokąt' };
+function t4UpdateBox(T) {
+  const t = T.demoT % 21, K = T4_BOX_KEYS;
+  let x = 0, w = 0;
+  for (let i = 1; i < K.length; i++) if (t <= K[i][0]) { const f = THREE.MathUtils.smoothstep(t, K[i - 1][0], K[i][0]); x = hMix(K[i - 1][1], K[i][1], f); w = hMix(K[i - 1][2], K[i][2], f); break; }
+  const r = 0.08, cut = T.view !== 1, sr = Math.sqrt(Math.max(0, r * r - w * w));
+  t4.pBall.visible = cut && sr > 0.002;
+  t4.pBall.position.set(x, 0, 0);
+  t4.pBall.scale.setScalar(sr);
+  t4.ghost.visible = T.view !== 0 && Math.abs(w) > 0.005;
+  t4.ghost.position.set(x, 0, 0);
+  t4.ghost.scale.setScalar(r);
+  t4WColor(w / 0.17, t4.ghost.material.color);
+  const tx = T4_BOX_TEXT.find(e => t < e[0]);
+  return ['Wyjmowanie z zamkniętego pudełka', tx[1], tx[2], `Położenie kulki w 4. wymiarze: W = ${w >= 0 ? '+' : '−'}${Math.abs(w / 0.08).toFixed(2).replace('.', ',')} promienia`,
+    'Kulka to hipersfera: w naszej przestrzeni widać jej przekrój – kulę, która maleje, gdy kulka odsuwa się w W'];
+}
+// pokaz „Świat 2D”: sześcian przechodzi przez płaszczyznę płaskiego świata
+const _t4cube = [];
+for (let i = 0; i < 8; i++) _t4cube.push(new THREE.Vector3(i & 1 ? 1 : -1, i & 2 ? 1 : -1, i & 4 ? 1 : -1));
+const T4_CUBE_EDGES = [];
+for (let i = 0; i < 8; i++) for (const b of [1, 2, 4]) if (!(i & b)) T4_CUBE_EDGES.push([i, i | b]);
+function t4UpdateFlat(T) {
+  const c = t4.cube, h = t4.CUBE / 2;
+  const y = T.demoAuto ? 0.24 * Math.sin(T.demoT * 0.45) : T.w / T4_W_MAX * 0.26;
+  c.position.set(0, y, 0);
+  c.rotation.set(0.62 + 0.13 * T.demoT, 0.4 + 0.21 * T.demoT, 0.17 + 0.07 * T.demoT);
+  c.updateMatrix();
+  const W = _t4cube.map(v => _t4a.copy(v).multiplyScalar(h).applyMatrix4(c.matrix).clone());
+  const pts = [];
+  for (const [a, b] of T4_CUBE_EDGES) {
+    const ya = W[a].y, yb = W[b].y;
+    if ((ya > 0) !== (yb > 0)) { const t = ya / (ya - yb); pts.push(new THREE.Vector3().lerpVectors(W[a], W[b], t)); }
+  }
+  const pos = t4.pGeo.attributes.position.array;
+  let o = 0;
+  if (pts.length >= 3) {
+    const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length, cz = pts.reduce((s, p) => s + p.z, 0) / pts.length;
+    pts.sort((a, b) => Math.atan2(a.z - cz, a.x - cx) - Math.atan2(b.z - cz, b.x - cx));
+    for (let m = 1; m < pts.length - 1; m++) for (const p of [pts[0], pts[m], pts[m + 1]]) { pos[o++] = p.x; pos[o++] = 0.002; pos[o++] = p.z; }
+  }
+  t4.pGeo.setDrawRange(0, o / 3);
+  t4.pGeo.attributes.position.needsUpdate = true;
+  const name = pts.length >= 3 ? T4_POLY_NAMES[pts.length] || pts.length + '-kąt' : 'nic';
+  return ['Analogia: świat 2D', 'Płaski stwór widzi tylko to, co leży w jego płaszczyźnie (niebieska)',
+    `Sześcian przechodzący przez nią to dla niego zmieniający się kształt – teraz: ${name}`,
+    'My tak samo widzimy bryły 4D: tylko ich przekrój (widok „Przekrój”)', 'Lewa gałka ↑↓ / suwak W: przesuwaj sześcian sam'];
+}
+
+function updateMode13(dt) {
+  const T = state.t4;
+  const sp = T.auto ? T4_AUTO[T.auto] : {};
+  for (const p in T4_PLANES) {
+    const a = ((sp[p] || 0) * T4_SPIN + (T.om[p] || 0)) * dt;
+    if (a) t4Rotate(T4_PLANES[p][0], T4_PLANES[p][1], a);
+  }
+  for (const p in T.om) T.om[p] *= Math.exp(-T4_SPIN_DAMP * dt);
+  t4Ortho();
+  if (T.demo) T.demoT += dt;
+  if (T.demo === 'pass' && T.demoAuto) {                    // bryła przelatuje przez naszą przestrzeń tam i z powrotem
+    const ph = (T.demoT * 0.16) % 2;
+    T.w = 1.3 * (ph < 1 ? 2 * ph - 1 : 3 - 2 * ph);
+    T.dirty = true;
+  }
+  const S = T4_SHAPES[T.shape], demo = T.demo === 'box' || T.demo === 'flat';
+  t4.obj.visible = !demo;
+  t4.box.visible = T.demo === 'box';
+  t4.flat.visible = T.demo === 'flat';
+  for (const m of [t4.edges, t4.verts, t4.faces, t4.slice, t4.outline]) m.visible = false;
+  t4.ball.visible = t4.fibers.visible = t4.dots.visible = false;
+  let lines;
+  if (T.demo === 'box') lines = t4UpdateBox(T);
+  else if (T.demo === 'flat') lines = t4UpdateFlat(T);
+  else {
+    if (S.sphere) t4UpdateSphere(T); else t4UpdatePoly(S, T);
+    const r = Math.sqrt(Math.max(0, 1 - T.w * T.w));
+    const cutLine = T.view === 1 ? 'Przekrój ukryty – widzisz tylko cień całej bryły'
+      : S.sphere ? (r > 0.01 ? `Przekrój (to widziałby człowiek): kula o promieniu ${r.toFixed(2).replace('.', ',')} – maleje, gdy bryła odsuwa się w W` : 'Przekrój: pusto – hipersfera jest całkiem poza naszą przestrzenią')
+      : T.faces ? `Przekrój (to widziałby człowiek): bryła o ${T.faces} ścianach – każda w innym kolorze` : 'Przekrój: pusto – bryła jest całkiem poza naszą przestrzenią (przesuń W)';
+    const viewLine = T.view === 0 ? 'Przekrój = część bryły, która leży w naszej przestrzeni (w = 0) – tylko tyle widzi człowiek'
+      : 'Cień = rzut 4D → 3D · czerwone: ana (+W) · białe: nasza przestrzeń · niebieskie: kata (−W)';
+    const note = T.demo === 'pass' ? 'Bryła przelatuje przez naszą przestrzeń: przekrój pojawia się z niczego, zmienia kształt i znika'
+      : T.auto === 'double' ? 'Podwójny obrót (XY i ZW naraz): żaden punkt poza środkiem nie stoi w miejscu – w 3D niemożliwe'
+      : T.auto ? `Obrót w płaszczyźnie ${T.auto.toUpperCase()}: bryła „przewraca się” przez 4. wymiar – dlatego przekrój zmienia kształt`
+      : S.note;
+    lines = [S.name, S.facts, cutLine, viewLine, note];
+  }
+  t4.board.setText(lines, ['#ffffff', '#ffd27a']);
+  const sc = t4.root.scale.x;
+  t4.board.sprite.position.copy(t4.root.position).addScaledVector(UP, -0.4 * sc);
+  t4.board.sprite.scale.set(0.95 * sc, 0.95 * sc / t4.board.sprite.userData.aspect, 1);
+  T.menuT -= dt;
+  if (T.dirty && T.menuT <= 0 && !state.menuHidden) { T.menuT = 0.2; T.dirty = false; drawMenu(); }
+}
+// gałki: prawa – obrót w 4D (◀ ▶ XW, ▲ ▼ ZW, z rozpędem), lewa – ▲ ▼ ruch w 4. wymiarze, ◀ ▶ obrót YW
+function stickT4(ctrl, dt) {
+  const gp = ctrl.userData.inputSource && ctrl.userData.inputSource.gamepad;
+  if (!gp || gp.axes.length <= ZOOM_STICK_AXIS) return;
+  const x = gp.axes[ZOOM_STICK_AXIS - 1], y = gp.axes[ZOOM_STICK_AXIS], T = state.t4, cl = v => THREE.MathUtils.clamp(v, -2.5, 2.5);
+  if (ctrl.userData.handedness === 'right') {
+    if (Math.abs(x) > STICK_DEADZONE) T.om.xw = cl(T.om.xw + x * T4_STICK_ACCEL * dt);
+    if (Math.abs(y) > STICK_DEADZONE) T.om.zw = cl(T.om.zw - y * T4_STICK_ACCEL * dt);
+  } else {
+    if (Math.abs(y) > STICK_DEADZONE) t4SetW(T.w - y * 0.7 * dt);
+    if (Math.abs(x) > STICK_DEADZONE) T.om.yw = cl(T.om.yw + x * T4_STICK_ACCEL * dt);
+  }
+}
+// suwak „położenie w 4. wymiarze” w menu
+function drawT4W(ctx, b) {
+  const T = state.t4, x0 = b.x + 30, x1 = b.x + b.w - 30, yT = b.y + 80, f = (T.w + T4_W_MAX) / (2 * T4_W_MAX);
+  ctx.font = 'bold 27px system-ui, sans-serif';
+  ctx.fillText(`4. wymiar: W = ${T.w > 0 ? '+' : T.w < 0 ? '−' : ''}${Math.abs(T.w).toFixed(2).replace('.', ',')}  (◀ kata · ana ▶)`, b.x + b.w / 2, b.y + 32);
+  const g = ctx.createLinearGradient(x0, 0, x1, 0);
+  g.addColorStop(0, '#4799ff'); g.addColorStop(0.5, '#e8ecff'); g.addColorStop(1, '#ff6a3a');
+  ctx.fillStyle = g; roundRect(ctx, x0, yT - 7, x1 - x0, 14, 7); ctx.fill();
+  ctx.fillStyle = '#ffffff'; ctx.fillRect((x0 + x1) / 2 - 2, yT - 18, 4, 36);
+  ctx.beginPath(); ctx.arc(x0 + (x1 - x0) * f, yT, 18, 0, Math.PI * 2); ctx.fill();
+}
+
+// =====================================================================
 //  MENU (panel z przyciskami, rysowany na canvas) – przesuwane i chowane
 // =====================================================================
 const MENU_CANVAS_W = 1024, MENU_CANVAS_H = 730;
 // wysokość narysowanej części panelu (tryby z dodatkowymi rzędami przycisków mają wyższy panel)
-const menuUsedH = () => ({ 3: 716, 11: 716, 12: 716, 2: 588, 8: 588, 9: 588 }[state.mode] || 460);
+const menuUsedH = () => ({ 3: 716, 11: 716, 12: 716, 13: 716, 2: 588, 8: 588, 9: 588 }[state.mode] || 460);
 const MENU_HEIGHT_M = MENU_WIDTH_M * MENU_CANVAS_H / MENU_CANVAS_W;
 // kolejność trybów w menu (numer na przycisku = miejsce na tej liście; dawne Tryby 5 „Kosmos” i 7 „Galaktyka”
 // są teraz częścią Podróży – od człowieka do całego kosmosu)
-const MODE_ORDER = [1, 2, 3, 4, 10, 6, 8, 9, 11, 12];
-const MODE_NAMES = { 1: 'Model', 2: 'Planety', 3: 'Ludziki', 4: 'Obiekty', 5: 'Kosmos', 6: 'Skala', 7: 'Galaktyka', 8: 'Grawitacja', 9: 'Światło', 10: 'Podróż', 11: 'Atom', 12: 'Historia' };
+const MODE_ORDER = [1, 2, 3, 4, 10, 6, 8, 9, 11, 12, 13];
+const MODE_NAMES = { 1: 'Model', 2: 'Planety', 3: 'Ludziki', 4: 'Obiekty', 5: 'Kosmos', 6: 'Skala', 7: 'Galaktyka', 8: 'Grawitacja', 9: 'Światło', 10: 'Podróż', 11: 'Atom', 12: 'Historia', 13: '4D' };
 const menuButtons = [
   { id: 'hide', label: 'Schowaj ✕', x: 760, y: 18, w: 246, h: 70, small: true },
-  ...MODE_ORDER.map((m, i) => ({ id: 'mode' + m, label: 'Tryb ' + (i + 1), sub: MODE_NAMES[m], x: 18 + i * 99, y: 196, w: 94, h: 120, small: true, font: 'bold 22px system-ui, sans-serif', subFont: '16px system-ui, sans-serif' })),
+  ...MODE_ORDER.map((m, i) => ({ id: 'mode' + m, label: 'Tryb ' + (i + 1), sub: MODE_NAMES[m], x: 18 + i * 90, y: 196, w: 86, h: 120, small: true, font: 'bold 21px system-ui, sans-serif', subFont: '15px system-ui, sans-serif' })),
+  // Tryb 13: bryły 4D, położenie w 4. wymiarze, widok, obroty, pokazy
+  ...T4_SHAPES.map((sh, i) => ({ id: 't4s' + i, label: sh.short, x: 18 + i * 166, y: 332, w: 159, h: 112, modes: [13], small: true, font: 'bold 26px system-ui, sans-serif',
+    active: () => state.t4.shape === i && state.t4.demo !== 'box' && state.t4.demo !== 'flat' })),
+  { id: 't4reset', label: 'Reset', x: 848, y: 332, w: 158, h: 112, modes: [13], small: true, font: 'bold 28px system-ui, sans-serif' },
+  { id: 't4W', draw: drawT4W, drag: f => t4SetW((f * 2 - 1) * T4_W_MAX), x: 18, y: 456, w: 610, h: 116, modes: [13] },
+  ...T4_VIEWS.map((v, i) => ({ id: 't4v' + i, label: v, x: 640 + i * 124, y: 456, w: 118, h: 116, modes: [13], small: true, font: 'bold 25px system-ui, sans-serif', active: () => state.t4.view === i })),
+  ...[['t4r_xw', 'Obrót XW'], ['t4r_yw', 'Obrót YW'], ['t4r_zw', 'Obrót ZW'], ['t4r_double', 'Podwójny'], ['t4halt', 'Stop'], ['t4d_pass', 'Przejście'], ['t4d_box', 'Pudełko'], ['t4d_flat', 'Świat 2D']]
+    .map(([id, label], i) => ({ id, label, x: 18 + i * 124, y: 588, w: 118, h: 116, modes: [13], small: true, font: 'bold 23px system-ui, sans-serif',
+      active: () => (id.startsWith('t4r_') ? state.t4.auto === id.slice(4) : id.startsWith('t4d_') ? state.t4.demo === id.slice(4) : false) })),
   // Tryb 12: oś czasu, odtwarzanie, tempo
   { id: 'histTime', draw: drawHistTimeline, drag: f => histSeek(f * HIST.length), x: 18, y: 332, w: 988, h: 112, modes: [12] },
   { id: 'histPrev', label: '◀◀ Poprzedni', x: 18, y: 456, w: 236, h: 116, modes: [12], small: true, font: 'bold 30px system-ui, sans-serif' },
@@ -8469,6 +8969,7 @@ const MENU_HINTS = {
   8: 'Spust: chwyć obiekt i włóż w siatkę · gałka: obróć siatkę · sondy: porównaj upływ czasu',
   10: 'Gałka/2 ręce: od człowieka do całego kosmosu i z powrotem · suwak: prędkość',
   12: 'Suwak / prawa gałka ◀ ▶: czas · A: pauza · B: dalej · spust: obróć scenę',
+  13: 'Spust: weź do ręki · prawa gałka: obrót 4D · lewa ▲▼: 4. wymiar · A: bryła · B: widok',
   11: 'Wybierz orbital albo pierwiastek · spust: obracaj atom · gałka/2 ręce: obrót i powiększenie',
   9: 'Prędkość: statek się skraca, jego zegar tyka wolniej · „Widok z pokładu”: tak widzi kosmos załoga',
 };
@@ -8566,6 +9067,7 @@ function onMenuButton(button) {
   if (button.id.startsWith('el_')) { atomSet({ kind: 'element', el: button.id.slice(3) }); return; }
   if (button.id.startsWith('temp')) { setM3Temperature(+button.id.slice(4)); return; }
   if (button.id.startsWith('ev_')) { m3StartEvent(button.id.slice(3)); return; }
+  if (button.id.startsWith('t4')) { t4Menu(button.id); drawMenu(); return; }
   if (button.id.startsWith('hspd')) { state.hist.speed = HIST_SPEEDS[+button.id.slice(4)]; histSetPlaying(true); return; }
   switch (button.id) {
     case 'hide': setMenuHidden(true); break;
@@ -8593,6 +9095,7 @@ function onMenuButton(button) {
     case 'mode10': setMode(10); break;
     case 'mode11': setMode(11); break;
     case 'mode12': setMode(12); break;
+    case 'mode13': setMode(13); break;
     case 'histPrev': histStep(-1); break;
     case 'histNext': histStep(1); break;
     case 'histPlay': histSetPlaying(!state.hist.playing); break;
@@ -8648,6 +9151,7 @@ function setMode(mode) {
   mode9Group.visible = mode === 9;
   mode11Group.visible = mode === 11;
   mode12Group.visible = mode === 12;
+  mode13Group.visible = mode === 13;
   stars.visible = mode !== 5 && mode !== 7 && mode !== 10;
   if (mode === 7 && state.journey) { state.journey = false; layoutMode7(); }
   if (mode === 10 && !state.journey) { layoutMode10(); }                        // w przestrzeni międzygalaktycznej nie ma pobliskich gwiazd
@@ -8669,6 +9173,7 @@ function layoutMode(mode) {
   if (mode === 10) layoutMode10();
   if (mode === 11) layoutMode11();
   if (mode === 12) layoutMode12();
+  if (mode === 13) layoutMode13();
 }
 
 // Suwak: pozycja trafienia na pasku -> prędkość
@@ -8688,6 +9193,7 @@ function focusOrbitOnMode(mode) {
   if (mode === 9) orbitControls.target.copy(sr.origin);
   if (mode === 11) orbitControls.target.copy(atom.group.position);
   if (mode === 12) orbitControls.target.copy(hist.root.position);
+  if (mode === 13) orbitControls.target.copy(t4.root.position);
   const shelf = shelfFor(mode);
   if (shelf) {
     const c = new THREE.Vector3();
@@ -8879,6 +9385,11 @@ function onPressStart(ctrl, source) {
     _sphere.set(hist.root.position, 0.6 * hist.root.scale.x);
     if (raycaster.ray.intersectsSphere(_sphere)) grabbed = startGrab(hist.root, ctrl, HIST_GRAB);
   }
+  else if (mode === 13) {
+    // weź bryłę 4D do ręki (z daleka też) – obraca się tak jak dłoń (obroty 3D); dwie ręce – powiększanie
+    _sphere.set(t4.root.position, 0.42 * t4.root.scale.x);
+    if (raycaster.ray.intersectsSphere(_sphere)) grabbed = startGrab(t4.root, ctrl, T4_GRAB);
+  }
   else if (mode === 6) { if (source === 'select') scaleFocusClick(raycaster.ray.origin.clone(), raycaster.ray.direction.clone()); return; }
   else if (mode === 8) {
     const o = pickST(raycaster.ray.origin.clone(), raycaster.ray.direction.clone());
@@ -8928,6 +9439,8 @@ function onButtonDown(ctrl, index) {
   if (state.mode === 6 && hand === 'right' && index === RESET_BUTTON) scaleJump(-1);
   if (state.mode === 12 && hand === 'right' && index === KNIFE_BUTTON) histSetPlaying(!state.hist.playing);
   if (state.mode === 12 && hand === 'right' && index === RESET_BUTTON) histStep(1);
+  if (state.mode === 13 && hand === 'right' && index === KNIFE_BUTTON) { t4Menu('t4s' + (state.t4.shape + 1) % T4_SHAPES.length); drawMenu(); }
+  if (state.mode === 13 && hand === 'right' && index === RESET_BUTTON) { t4Menu('t4v' + (state.t4.view + 1) % 3); drawMenu(); }
 }
 
 // Gałka w Trybie 5: powiększanie/pomniejszanie całego kosmosu wokół głowy
@@ -9061,6 +9574,20 @@ window.addEventListener('keydown', e => {
   if (state.mode === 9 && key === 'w') toggleSrShip();
   if (state.mode === 11 && '1234567'.includes(e.key) && e.key !== '') atomSet({ kind: 'orbital', orb: Object.keys(ATOM_ORBITALS)[+e.key - 1], variant: 0 });
   if (state.mode === 12 && e.key === ' ') histSetPlaying(!state.hist.playing);
+  if (state.mode === 13) {
+    const T = state.t4, act = id => { t4Menu(id); drawMenu(); };
+    if ('12345'.includes(e.key) && e.key !== '') act('t4s' + (+e.key - 1));
+    if (key === 'v') act('t4v' + (T.view + 1) % 3);
+    if (e.key === 'ArrowLeft') T.om.xw -= 0.6;
+    if (e.key === 'ArrowRight') T.om.xw += 0.6;
+    if (e.key === 'ArrowUp') t4SetW(T.w + 0.1);
+    if (e.key === 'ArrowDown') t4SetW(T.w - 0.1);
+    if (key === 'd') act('t4r_double');
+    if (e.key === ' ') act('t4halt');
+    if (key === 'p') act('t4d_pass');
+    if (key === 'o') act('t4d_box');
+    if (key === 'f') act('t4d_flat');
+  }
   if (state.mode === 12 && e.key === 'ArrowLeft') histStep(-1);
   if (state.mode === 12 && e.key === 'ArrowRight') histStep(1);
   if (state.mode === 12 && e.key === 'Home') { histSeek(0); histSetPlaying(true); }
@@ -9204,6 +9731,9 @@ function updateStatus(time) {
   } else if (mode === 12) {
     const H = state.hist, i = Math.min(HIST.length - 1, Math.floor(H.p));
     text = `Historia atomu  ·  rozdział ${i + 1}/${HIST.length}  ·  tempo ×${String(H.speed).replace('.', ',')}${H.playing ? '' : '  ·  pauza'}  ·  ${state.fps} FPS`;
+  } else if (mode === 13) {
+    const T = state.t4, nm = T.demo === 'box' ? 'Pudełko' : T.demo === 'flat' ? 'Świat 2D' : T4_SHAPES[T.shape].short;
+    text = `4D: ${nm}  ·  W = ${T.w.toFixed(2).replace('.', ',')}  ·  widok: ${T4_VIEWS[T.view]}  ·  ${state.fps} FPS`;
   } else if (mode === 10) {
     const L = state.mwLog;
     text = `1 m w goglach = ${formatMeters(M_PER_LY / Math.pow(10, L))}  ·  ${journeyFocusText(L)}  ·  ${state.fps} FPS`;
@@ -9285,6 +9815,7 @@ renderer.setAnimationLoop((time, frame) => {
     if (state.mode === 8 && presenting) stickST(ctrl, dt);
     if (state.mode === 11 && presenting) stickAtom(ctrl, dt);
     if (state.mode === 12 && presenting) stickHist(ctrl, dt);
+    if (state.mode === 13 && presenting) stickT4(ctrl, dt);
     const knifeHand = isKnifeHand(ctrl);
     ctrl.userData.ray.visible = presenting && !knifeHand;
     ctrl.userData.rayDot.visible = false;
@@ -9366,6 +9897,9 @@ renderer.setAnimationLoop((time, frame) => {
   } else if (state.mode === 12) {
     updateMode12(dt);
     updateHeadlight(mode12Light);
+  } else if (state.mode === 13) {
+    updateMode13(dt);
+    updateHeadlight(mode13Light);
   } else if (state.mode === 9) {
     updateMode9(dt);
     updateHeadlight(mode9Light);
@@ -9393,5 +9927,5 @@ window.solar = {
   setMode, startFocus, cutItem, glueAll, startGrab, endGrab, updateGrabs, grabs, zoomSystemAround,
   setKnife, updateKnife, tryKnifeCut, grabShelf, setMenuHidden, onPressStart, onPressEnd, startBehavior, startFollow, stopFollow, m3Extras, m3Features, setM3Zoom, rotateM3Planet, m3CosmosParts,
   m3W, m3StartEvent, m3EndEvent, setM3Temperature, m3Atmo, mwSkyUniforms, mwPivot, stars, makeGlobeSampler, mwQuatSol,
-  models, scaleItems, scaleJump, scaleZoom, m3Surface, layoutMode, mwGoTo, mwZoom, mw, stObjects, stRoot, toggleSheet, mwPath, stProbes, toggleProbes, toggleInside, sr, setSrSpeed, toggleSrShip, srShip, journey, layoutMode10, surfaceAction, atom, atomSet, hist, HIST, histSeek, histSetPlaying, m3Ride, enterSurface, exitSurface, scaleFocusClick, turnAroundFocus, pitchSystem,
+  models, scaleItems, scaleJump, scaleZoom, m3Surface, layoutMode, mwGoTo, mwZoom, mw, stObjects, stRoot, toggleSheet, mwPath, stProbes, toggleProbes, toggleInside, sr, setSrSpeed, toggleSrShip, srShip, journey, layoutMode10, surfaceAction, atom, atomSet, hist, HIST, histSeek, histSetPlaying, t4, T4_SHAPES, t4Menu, t4SetW, m3Ride, enterSurface, exitSurface, scaleFocusClick, turnAroundFocus, pitchSystem,
 };

@@ -3,7 +3,7 @@
 Interaktywny Układ Słoneczny w goglach VR, działający w przeglądarce **Meta Quest Browser**.
 Nie trzeba nic instalować w goglach: wystarczy otworzyć stronę i kliknąć **ENTER VR**.
 
-Dziesięć trybów (przełączane na panelu menu):
+Jedenaście trybów (przełączane na panelu menu):
 
 - **Tryb 1 – Model:** cały układ do orbity Plutona w prawdziwej skali, z księżycami i pierścieniami.
   Planety krążą po eliptycznych orbitach (prawa Keplera) i obracają się wokół osi, księżyce krążą wokół planet.
@@ -80,6 +80,14 @@ Dziesięć trybów (przełączane na panelu menu):
   komórki przy kominach na dnie oceanu → wapień, płyty i wulkany (obieg węgla) → paproć i dinozaur → pszenica
   i chleb → Ty (białko mięśnia). Nasz atom świeci złotem i zostawia ślad; tablica pod sceną mówi, kiedy to jest,
   czym atom akurat jest i co się dzieje. Oś czasu w menu przewija historię, a tempo zmienisz od ×¼ do ×4.
+- **Tryb 11 – 4D:** bryły z czterema wymiarami przestrzennymi, które bierzesz do ręki: tesserakt (hipersześcian),
+  5-komórka, 16-komórka, 24-komórka i hipersfera. Widzisz je na dwa sposoby: **przekrój** – to, co naprawdę
+  zobaczyłby człowiek (część bryły leżąca w naszej przestrzeni; każda ściana w innym kolorze, bo każda jest
+  kawałkiem innej komórki 3D) – i **cień**, czyli rzut 4D → 3D (kolor = położenie w 4. wymiarze: czerwone „ana”,
+  niebieskie „kata”). Gałką obracasz bryłę w płaszczyznach z W (XW, YW, ZW – takich obrotów nie ma w 3D) i
+  przesuwasz ją w 4. wymiarze. Pokazy: **Przejście** (bryła przelatuje przez naszą przestrzeń – przekrój pojawia
+  się z niczego i znika), **Pudełko** (kulka 4D wyjęta z zamkniętego pudełka bez otwierania go), **Świat 2D**
+  (analogia: płaski stwór widzi tylko przekrój sześcianu) i **podwójny obrót** (dwie płaszczyzny naraz).
 
 Ziemia we wszystkich trybach to model 3D z teksturą (`models/earth.glb`).
 
@@ -195,6 +203,18 @@ Napis pod obiektami podaje skalę, np. „1 m w goglach = 2,9 m naprawdę”.
 | Tempo | przyciski ×¼, ×½, ×1, ×2, ×4 (na PC: **,** i **.**) |
 | Obróć / przesuń scenę | **spust** na scenie i obracaj dłonią |
 
+### Tryb 11 – 4D
+
+| Akcja | Jak |
+|---|---|
+| Weź bryłę do ręki | **spust** lub **grip** na bryle (z daleka też) – obraca się jak dłoń (obroty 3D); dwie ręce – powiększanie |
+| Obrót w 4D (z rozpędem) | **prawa gałka**: lewo/prawo – płaszczyzna XW, góra/dół – ZW; **lewa gałka** lewo/prawo – YW (na PC: **← →**) |
+| Ruch w 4. wymiarze (W) | **lewa gałka** góra/dół albo suwak **W** w menu (na PC: **↑ ↓**); przy środku suwak „wskakuje” na W = 0 |
+| Następna bryła | **A** albo przyciski w menu (na PC: **1–5**) |
+| Widok: przekrój / cień / oba | **B** albo przyciski w menu (na PC: **V**) |
+| Stały obrót | przyciski **Obrót XW / YW / ZW**, **Podwójny** (XY i ZW naraz, na PC: **D**), **Stop** (na PC: **spacja**) |
+| Pokazy | **Przejście** (na PC: **P**), **Pudełko** (**O**), **Świat 2D** (**F**) |
+
 Na panelu menu widać skalę i **FPS** (cel: 72).
 
 ---
@@ -280,6 +300,7 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 | `GALLERY_*`, `SURFACE_*` | Tryb 2: galeria miniatur (odległość, odstępy, rozmiar), widok z powierzchni |
 | `J_SCALE_START_M`, `J_ATMOSPHERE_KM`, `J_SUN_ELEVATION_DEG` | Tryb 5: skala na starcie (1 = człowiek w prawdziwej wielkości), grubość atmosfery, wysokość Słońca nad człowiekiem |
 | `HIST_POINTS`, `HIST_BRIGHTNESS`, `HIST_SPEEDS`, `HIST_DISTANCE_M` | Tryb 10 (w sekcji Trybu 10): liczba i jasność punktów, tempa, odległość sceny; długość rozdziałów – pole `dur` w tablicy `HIST` |
+| `T4_*` | Tryb 11: rozmiar i odległość bryły, siła perspektywy cienia (`T4_EYE_W`), zakres ruchu w 4. wymiarze, prędkość obrotu i rozpędu gałki |
 | `SR_*` | Tryb 8: „prędkość światła” w goglach, długość toru i statku, wysokość zegara świetlnego, prędkości do wyboru |
 | `MODEL_FILES`, `PERSON_*` | pliki modeli 3D; nazwa animacji chodu i obrót modelu ludzika |
 | `SCALE_*`, `SCALE_OBJECTS` | Tryb 6: lista obiektów (rozmiar, opis), progi znikania, prędkość zoomu |
@@ -343,6 +364,17 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 - **Ludziki na planecie z modelu (opcjonalnie):** trójkąty planety są posortowane w siatkę 128 × 64 kierunków, więc „promień od
   środka” sprawdza tylko kilkadziesiąt trójkątów. Model jest dwuwarstwową skorupą, więc grunt to drugie trafienie.
   Woda jest rozpoznawana po kolorze tekstury (niebieskie = morze).
+
+### Tryb 11 – 4D
+- Bryła to lista wierzchołków o 4 współrzędnych; krawędzie, ściany i komórki (ściany 3D) liczy kod. Obrót to
+  macierz 4×4 (obrót zawsze w jednej z 6 płaszczyzn: XY, XZ, YZ, XW, YW, ZW). Ręka obraca bryłę tylko w 3D –
+  obroty z W są na gałce.
+- **Przekrój:** punkty, w których krawędzie przebijają naszą przestrzeń (w = 0). Punkty leżące na tej samej
+  komórce tworzą jedną ścianę przekroju (wielokąt) – dlatego każda ściana ma kolor swojej komórki.
+- **Cień:** rzut perspektywiczny jak zdjęcie z „oka” stojącego w 4. wymiarze (`T4_EYE_W`): bliższe w W –
+  większe. To dlatego tesserakt wygląda jak sześcian w sześcianie.
+- **Hipersfera:** przekrój to kula o promieniu √(1 − w²); cień to 36 okręgów Hopfa (każde dwa splecione),
+  a kropki na kuli pokazują, gdzie te okręgi przebijają naszą przestrzeń.
 
 ## Struktura plików
 
