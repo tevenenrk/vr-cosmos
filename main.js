@@ -338,8 +338,12 @@ const MW_TO_EARTH_FROM = 4.6;          // od tej skali (cały Układ Słoneczny 
 const MW_TO_EARTH_TO = 7.6;            // ...do Ziemi (log10 m/rok św.) – Słońce mijasz z boku, małe
 const MW_STAR_DENSITY = 0.004;         // gwiazdy na rok świetlny³ w sąsiedztwie Słońca (prawdziwa gęstość)
 const MW_NEAR_REAL_LY = 160;           // do tej odległości od Słońca gwiazdy mają prawdziwą gęstość (ok. 55 tys. gwiazd)
-const MW_NEAR_VIEW = 30000;            // przy oddaleniu: ok. tyle gwiazd w zasięgu wzroku (dalsze – rzadziej, ciemniej)
-const MW_NEAR_RADIUS_LY = 1500;        // sąsiedztwo Słońca ma taki promień (dalej Galaktykę tworzą jej własne gwiazdy)
+const MW_NEAR_SLOPE = 3.8;             // dalej gęstość maleje jak (160/r)^3,8 (mniej = więcej gwiazd dalej; razem ok. 170 tys.)
+const MW_NEAR_RADIUS_LY = 4000;        // gęsty fragment ramienia wokół Słońca ma taki promień (dalej Galaktykę tworzą jej własne gwiazdy)
+const MW_NEAR_THIN = 1.3;              // przy oddalaniu o 10× pokazywana gęstość maleje 10^1,3 ≈ 20× (mniej = gwiazdy gasną wolniej)
+const MW_NEAR_FADE_FROM = -4.6;        // gęsty fragment znika dopiero między tymi skalami (log10 m/rok św.) –
+const MW_NEAR_FADE_TO = -5.3;          // gdy widać już całą Galaktykę
+const MW_NEAR_GAIN = 0.12;             // jasność gęstego fragmentu: ile „pełnych” gwiazd może nałożyć się na piksel (więcej = jaśniej)
 const MW_ECLIPTIC_TILT_DEG = 60;       // płaszczyzna orbit planet jest nachylona do dysku Galaktyki o ok. 60°
 const MW_SKY_M = 3000;                 // dalsze gwiazdy są rysowane na niebie (sfera o tym promieniu) – Droga Mleczna zawsze widoczna
 
@@ -5770,41 +5774,44 @@ const mw = (() => {
   mode7Group.add(galaxy);
 
   // sąsiedztwo Słońca: do MW_NEAR_REAL_LY prawdziwa gęstość gwiazd (ok. 0,004 na rok świetlny³), dalej warstwy coraz
-  // rzadsze. Przy danej skali pokazujemy wszędzie TAKĄ SAMĄ gęstość (uDisp: prawdziwą z bliska, mniejszą przy oddaleniu),
-  // więc nigdzie nie widać „kuli” gęstszych gwiazd. Dalsze gwiazdy (w goglach) są ciemniejsze – jak naprawdę.
+  // rzadsze (płynnie, MW_NEAR_SLOPE). Przy oddalaniu gęstość pokazywana (uDisp) maleje powoli, a gęstszych miejsc nie pokazujemy
+  // gęściej niż uDisp – brak „kuli”. Cały gęsty fragment ramienia widać jeszcze razem z zarysem Galaktyki.
   const near = new THREE.Group();
-  const nearUniforms = { uDisp: { value: MW_STAR_DENSITY }, uAlpha: { value: 0 }, uR: { value: new THREE.Vector3(MW_NEAR_RADIUS_LY, MW_NEAR_RADIUS_LY * 0.35, MW_NEAR_RADIUS_LY) } };
+  const nearUniforms = { uDisp: { value: MW_STAR_DENSITY }, uAlpha: { value: 0 }, uGain: { value: 1 }, uR: { value: new THREE.Vector3(MW_NEAR_RADIUS_LY, MW_NEAR_RADIUS_LY * 0.35, MW_NEAR_RADIUS_LY) } };
   const nearExtra = {
     key: 'near2', uniforms: nearUniforms,
-    head: 'attribute float rank;\nattribute float dens;\nuniform float uDisp;\nuniform float uAlpha;\nuniform vec3 uR;\n',
+    head: 'attribute float rank;\nattribute float dens;\nuniform float uDisp;\nuniform float uAlpha;\nuniform float uGain;\nuniform vec3 uR;\n',
     body: `float rn = length(position / uR);
         float frac = min(1.0, uDisp / dens);
         float de = distance(wp.xyz, cameraPosition);
-        vFade *= uAlpha * clamp((frac - rank) / (0.05 * frac + 1e-5), 0.0, 1.0) * (1.0 - smoothstep(0.6, 1.0, rn)) * clamp(pow(1.5 / de, 1.3), 0.04, 1.0);
+        vFade *= uAlpha * uGain * clamp((frac - rank) / (0.05 * frac + 1e-5), 0.0, 1.0) * (1.0 - smoothstep(0.6, 1.0, rn)) * clamp(pow(1.5 / de, 1.3), 0.04, 1.0);
         sizeK = 1.0 + 1.2 * clamp(1.0 - de / 1.2, 0.0, 1.0);`,
   };
   const nrnd = seededRandom('mwnear3');
   const tints = [[1, 0.72, 0.5], [1, 0.9, 0.75], [1, 0.97, 0.92], [0.92, 0.95, 1], [0.72, 0.82, 1]];
   const sets = [{ size: 1.7, p: [], c: [], r: [], d: [] }, { size: 3.2, p: [], c: [], r: [], d: [] }];   // zwykłe i jasne
-  const Hz = 300, sphV = r => 4 / 3 * Math.PI * r ** 3;                  // grubość dysku (wysokość skali) ~300 lat św.
-  const R0 = MW_NEAR_REAL_LY;
-  for (const [r0, r1] of [[0, R0], [R0, 2 * R0], [2 * R0, 700], [700, MW_NEAR_RADIUS_LY]]) {
-    const rr = () => Math.cbrt(r0 ** 3 + nrnd() * (r1 ** 3 - r0 ** 3));
-    let acc = 0;
-    for (let i = 0; i < 3000; i++) acc += Math.exp(-Math.abs(rr() * (nrnd() * 2 - 1)) / Hz);
-    const vol = (sphV(r1) - sphV(r0)) * acc / 3000;                    // objętość „efektywna” (dysk rzednie w pionie)
-    const count = r0 === 0 ? Math.round(MW_STAR_DENSITY * vol) : Math.round(MW_NEAR_VIEW * 1.25 * vol / sphV(r1));
-    const dens = count / vol;
-    for (let i = 0; i < count;) {
-      const r = rr(), u = nrnd() * 2 - 1, th = nrnd() * Math.PI * 2, q = Math.sqrt(1 - u * u);
-      if (nrnd() > Math.exp(-Math.abs(r * u) / Hz)) continue;
-      const set = sets[nrnd() < 0.012 ? 1 : 0];
-      set.p.push(r * q * Math.cos(th), r * u, r * q * Math.sin(th));
-      const t = tints[Math.floor(nrnd() * tints.length)], b = set === sets[1] ? 0.7 + nrnd() * 0.3 : 0.3 + nrnd() * 0.7;
-      set.c.push(t[0] * b, t[1] * b, t[2] * b);
-      set.r.push(nrnd()); set.d.push(dens);
-      i++;
-    }
+  // gęstość: prawdziwa do MW_NEAR_REAL_LY, dalej maleje płynnie jak (R0/r)^MW_NEAR_SLOPE; w pionie dysk (wysokość skali Hz).
+  // Losujemy dokładnie z tego rozkładu (odległość z tablicy, potem wysokość), bez warstw – nigdzie nie ma skoku gęstości.
+  const Hz = 300, R0 = MW_NEAR_REAL_LY, RN = MW_NEAR_RADIUS_LY;           // grubość dysku (wysokość skali) ~300 lat św.
+  const fR = r => Math.min(1, (R0 / Math.max(r, 1e-6)) ** MW_NEAR_SLOPE);
+  const NB = 4000, cdf = new Float64Array(NB + 1);
+  for (let i = 1; i <= NB; i++) {
+    const r = (i - 0.5) / NB * RN, gz = Hz / r * (1 - Math.exp(-r / Hz));  // średnio exp(-|z|/Hz) na sferze o promieniu r
+    cdf[i] = cdf[i - 1] + 4 * Math.PI * r * r * fR(r) * gz * (RN / NB);
+  }
+  const count = Math.round(MW_STAR_DENSITY * cdf[NB]);
+  for (let i = 0; i < count; i++) {
+    const x = nrnd() * cdf[NB];
+    let lo = 0, hi = NB;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cdf[m] < x) lo = m; else hi = m; }
+    const r = (lo + (x - cdf[lo]) / (cdf[hi] - cdf[lo] || 1)) / NB * RN;
+    const au = -Hz / r * Math.log(1 - nrnd() * (1 - Math.exp(-r / Hz)));  // |u| z rozkładu ~exp(-r|u|/Hz)
+    const u = Math.min(1, au) * (nrnd() < 0.5 ? -1 : 1), th = nrnd() * Math.PI * 2, q = Math.sqrt(1 - u * u);
+    const set = sets[nrnd() < 0.012 ? 1 : 0];
+    set.p.push(r * q * Math.cos(th), r * u, r * q * Math.sin(th));
+    const t = tints[Math.floor(nrnd() * tints.length)], b = set === sets[1] ? 0.7 + nrnd() * 0.3 : 0.3 + nrnd() * 0.7;
+    set.c.push(t[0] * b, t[1] * b, t[2] * b);
+    set.r.push(nrnd()); set.d.push(MW_STAR_DENSITY * fR(r) * Math.exp(-Math.abs(r * u) / Hz));
   }
   for (const set of sets) {
     const g = new THREE.BufferGeometry();
@@ -6445,9 +6452,12 @@ function journeyCosmos(dt) {
   if (!mode5Group.visible) return;
   universe.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), state.mwFwd);
   universe.scale.setScalar(Math.pow(10, L + 6));                  // 1 m we wnętrzu „universe” = 1 mln lat św.
+  // Droga Mleczna z „universe” dokładnie w środku obrazu dysku Galaktyki – cały kosmos oddala się razem z nią
+  // (uwaga: localToWorld sam przelicza macierz, więc przesunięcie liczymy z kopii, zanim zmienimy position)
   universe.position.set(0, 0, 0);
   universe.updateMatrixWorld(true);
-  universe.position.copy(mwPivot).sub(universe.localToWorld(_jB.copy(journey.mwPosInWeb)));   // Droga Mleczna w punkcie zoomu
+  _jB.copy(journey.mwPosInWeb).applyMatrix4(universe.matrixWorld);
+  universe.position.copy(mw.galaxy.getWorldPosition(_jC)).sub(_jB);
   universe.updateMatrixWorld(true);
   for (const m of galaxyMeshes) m.material.opacity = cA;
   cosmos.web.material.opacity = cA;
@@ -6498,10 +6508,16 @@ function updateMode7(dt) {
   mw.galUniforms.uGal.value = galG * THREE.MathUtils.lerp(1, MW_SKY_BAND_BRIGHTNESS, THREE.MathUtils.smoothstep(L, -2.2, -0.8))   // z wnętrza: pas na niebie
     * Math.min(1, Math.pow(10, 1.2 * (L + 4.2)));       // z daleka: im mniejsza Galaktyka, tym ciemniejsze punkty (jasność powierzchni stała)
   mw.disk.material.opacity *= 1 + (MW_DISK_FAR_OPACITY / 0.35 - 1) * (1 - galG);
-  const nearA = THREE.MathUtils.smoothstep(L, -3.6, -3.0);
+  const nearA = THREE.MathUtils.smoothstep(L, MW_NEAR_FADE_TO, MW_NEAR_FADE_FROM);
   mw.nearUniforms.uAlpha.value = nearA;
-  const Rv = 4 / s;                                                   // promień „w zasięgu wzroku” (ok. 4 m w goglach), w latach św.
-  mw.nearUniforms.uDisp.value = Math.min(MW_STAR_DENSITY, MW_NEAR_VIEW / (4 / 3 * Math.PI * Rv ** 3));
+  const uD = MW_STAR_DENSITY * Math.min(1, Math.pow(10, MW_NEAR_THIN * (L + 2.2)));
+  mw.nearUniforms.uDisp.value = uD;
+  // jasność: ile gwiazd nakłada się na jeden piksel w środku fragmentu (gwiazdy na drodze wzroku przez gęsty środek);
+  // gdy dużo – każda ciemniejsza, więc środek świeci, ale nie robi się biała plama, a brzegi są „ziarniste”
+  const rU = Math.min(MW_NEAR_RADIUS_LY, MW_NEAR_REAL_LY * Math.pow(MW_STAR_DENSITY / uD, 1 / MW_NEAR_SLOPE));
+  const pxM = MW_DISTANCE_M * getPixelAngle();                        // ile metrów (w goglach) ma piksel na odległości Słońca
+  const overlap = uD * 2 * Math.min(rU, 600) / (s * s) * 3 * pxM * pxM;
+  mw.nearUniforms.uGain.value = Math.min(1, MW_NEAR_GAIN / Math.max(1e-6, overlap));
   stars.visible = L > -1 && !state.journey;            // z wnętrza Galaktyki: jeszcze tło dalekich gwiazd (w Podróży – gwiazdy sąsiedztwa)
   mw.near.visible = nearA > 0.01;
   const bandA = THREE.MathUtils.smoothstep(L, -2.6, -1.2);
@@ -9376,6 +9392,6 @@ window.solar = {
   shelf2, shelf4, m3Planet, people, universe, galaxies, cosmos, menuMesh, menuTab, floaters, controllers,
   setMode, startFocus, cutItem, glueAll, startGrab, endGrab, updateGrabs, grabs, zoomSystemAround,
   setKnife, updateKnife, tryKnifeCut, grabShelf, setMenuHidden, onPressStart, onPressEnd, startBehavior, startFollow, stopFollow, m3Extras, m3Features, setM3Zoom, rotateM3Planet, m3CosmosParts,
-  m3W, m3StartEvent, m3EndEvent, setM3Temperature, m3Atmo, mwSkyUniforms, stars, makeGlobeSampler, mwQuatSol,
+  m3W, m3StartEvent, m3EndEvent, setM3Temperature, m3Atmo, mwSkyUniforms, mwPivot, stars, makeGlobeSampler, mwQuatSol,
   models, scaleItems, scaleJump, scaleZoom, m3Surface, layoutMode, mwGoTo, mwZoom, mw, stObjects, stRoot, toggleSheet, mwPath, stProbes, toggleProbes, toggleInside, sr, setSrSpeed, toggleSrShip, srShip, journey, layoutMode10, surfaceAction, atom, atomSet, hist, HIST, histSeek, histSetPlaying, m3Ride, enterSurface, exitSurface, scaleFocusClick, turnAroundFocus, pitchSystem,
 };

@@ -42,10 +42,10 @@ Dziesięć trybów (przełączane na panelu menu):
   atmosfery → Księżyc → Układ Słoneczny → najbliższe gwiazdy → Droga Mleczna → Grupa Lokalna (Andromeda) →
   sieć kosmiczna galaktyk. Grunt wokół człowieka ma tę samą teksturę co kula Ziemi (wycinek z niej plus drobne
   szczegóły), więc przy oddalaniu płynnie zamienia się w planetę. W naszym ramieniu Galaktyki gwiazdy mają
-  prawdziwą gęstość (ok. 0,004 na rok świetlny³, 55 tys. gwiazd do 160 lat św.); przy oddalaniu pokazywana gęstość
-  jest wszędzie taka sama, a dalsze gwiazdy są ciemniejsze, więc nie widać „kuli” gęstszych gwiazd. Gwiazdy
-  Galaktyki z daleka przechodzą w obraz jej dysku narysowany z tych samych gwiazd i ten obraz zostaje wśród
-  innych galaktyk – bez przeskoku. Na środku widoku jest człowiek (aż widać całą Ziemię), potem Ziemia, a od
+  prawdziwą gęstość (ok. 0,004 na rok świetlny³, 55 tys. gwiazd do 160 lat św.), a gęsty fragment ramienia
+  (ok. 150 tys. gwiazd w promieniu 4000 lat św.) przy oddalaniu przerzedza się powoli i znika dopiero, gdy widać
+  już zarys całej Galaktyki. Gwiazdy Galaktyki z daleka przechodzą w obraz jej dysku narysowany z tych samych
+  gwiazd, a galaktyki, sieć kosmiczna i tło pojawiają się wokół niego i oddalają się razem z nim – bez przeskoku. Na środku widoku jest człowiek (aż widać całą Ziemię), potem Ziemia, a od
   Drogi Mlecznej – ona.
 - **Tryb 6 – Skala:** podróż przez 33 rzędy wielkości, od atomu (0,1 nm) przez DNA, wirusa, bakterię, włos,
   mrówkę, człowieka, autobus, płetwala, wieżę Eiffla, Everest, księżyce, Ziemię, Jowisza, Słońce, Betelgezę,
@@ -274,7 +274,7 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 | `MODE3_VILLAGES`, `MODE3_HOUSES_PER_VILLAGE`, `MODE3_HOME_SHARE`, `MODE3_VOLCANO`, `MODE3_STORM`, `MODE3_MOON` | Tryb 3: wioski z domkami, wulkan, burza, księżyc i satelita (`false` = wyłącz) |
 | `MODE3_FOLLOW_SCALE`, `MODE3_FOLLOW_DISTANCE_M`, `MODE3_FOLLOW_DROP_M` | Tryb 3: kamera za ludzikiem (powiększenie, odległość ludzika od Ciebie) |
 | `MODE3_PLANET_DETAIL`, `MODE3_SEA_LEVEL`, `MODE3_MOUNTAIN_HEIGHT`, `MODE3_TREE_COUNT` | Tryb 3: wygląd planety generowanej w kodzie (`MODE3_USE_MODEL_PLANET_FILE = true` – planeta z pliku) |
-| `MW_*` | Tryb 5 (Podróż), etap Galaktyki: liczba gwiazd, pochylenie, prędkość zoomu (`MW_SPEED_MIN/MAX` – zakres suwaka), `MW_STAR_DENSITY` – gęstość gwiazd, `MW_NEAR_REAL_LY` – do jakiej odległości prawdziwa, `MW_NEAR_VIEW` – ile gwiazd w zasięgu wzroku przy oddaleniu, `MW_SKY_M` – sfera nieba, `MW_ECLIPTIC_TILT_DEG` – nachylenie orbit do dysku Galaktyki |
+| `MW_*` | Tryb 5 (Podróż), etap Galaktyki: liczba gwiazd, pochylenie, prędkość zoomu (`MW_SPEED_MIN/MAX` – zakres suwaka), `MW_STAR_DENSITY` – gęstość gwiazd, `MW_NEAR_REAL_LY` – do jakiej odległości prawdziwa, `MW_NEAR_SLOPE` / `MW_NEAR_RADIUS_LY` – gęsty fragment ramienia (jak szybko rzednie i jak daleko sięga), `MW_NEAR_THIN` – jak szybko gwiazdy rzedną przy oddalaniu, `MW_NEAR_FADE_FROM/TO` – kiedy fragment znika, `MW_NEAR_GAIN` – jak ciemnieje, `MW_SKY_M` – sfera nieba, `MW_ECLIPTIC_TILT_DEG` – nachylenie orbit do dysku Galaktyki |
 | `MODE3_ORBIT_RADIUS_M`, `MODE3_SUN_RADIUS_M`, `MODE3_YEAR_S` | Tryb 3: jak daleko jest Słońce, jak duże, ile trwa rok planety |
 | `ST_*` | Tryb 7: rozmiar i gęstość siatki, jasność linii, wysokość płachty, okres orbity Ziemi, siatka „w środku” (`ST_INSIDE_SCALE`), sondy (`ST_YEARS_PER_S`, `ST_TIME_EFFECT`) |
 | `GALLERY_*`, `SURFACE_*` | Tryb 2: galeria miniatur (odległość, odstępy, rozmiar), widok z powierzchni |
