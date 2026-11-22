@@ -374,6 +374,13 @@ const SR_SPEEDS = [0, 0.1, 0.5, 0.87, 0.99, 0.999];   // prędkości do wyboru (
 const J_SCALE_START_M = 1;             // na starcie 1 m w goglach = 1 m naprawdę (człowiek w prawdziwej wielkości)
 const J_ATMOSPHERE_KM = 100;           // Podróż: grubość atmosfery (niebieskie niebo z bliska, poświata nad brzegiem Ziemi z kosmosu)
 const J_SUN_ELEVATION_DEG = 55;        // Podróż: Słońce tak wysoko nad człowiekiem (dzień)
+// Podróż: w tych miejscach (log10 m/rok św.) przelot zwalnia na kilka sekund, żeby nacieszyć się widokiem:
+//  3,3 – cały Układ Słoneczny przed Tobą · −0,6 – gwiazdy mijają Cię koło głowy · −4,6 – widać całą Drogę Mleczną ·
+//  −6,4 – mijają Cię galaktyki
+const J_SLOW_AT = [3.3, -0.6, -4.6, -6.4];
+const J_SLOW_FACTOR = 0.07;            // tam prędkość = tyle × zwykła (mniej = dłużej)
+const J_SLOW_HALF = 0.15;              // połowa szerokości strefy wolnego lotu (w rzędach wielkości)
+const J_SLOW_RAMP = 0.3;               // płynne hamowanie / przyspieszanie (w rzędach wielkości)
 
 // --- Menu (panel w VR) ------------------------------------------------
 const MENU_WIDTH_M = 0.48;          // szerokość panelu [m]
@@ -6421,7 +6428,24 @@ function mwSetEarthDir(dir) {
   mw.moon.position.copy(mwEarthDir).multiplyScalar(0.8).addScaledVector(side, -0.6).normalize().multiplyScalar(MOON_DIST_AU);
 }
 function mwZoom(decades) { state.mwAnim = null; state.mwLog = THREE.MathUtils.clamp(state.mwLog + decades, mwLogMin(), mwLogMax()); }
-function mwGoTo(log) { state.mwAnim = { from: state.mwLog, to: log, t: 0, dur: Math.max(1, Math.abs(log - state.mwLog) / state.mwSpeed) }; }
+function mwGoTo(log) { state.mwAnim = { to: log, t: 0 }; }
+// Podróż: mnożnik prędkości przelotu – przy ciekawych widokach (J_SLOW_AT) lot zwalnia
+function jSlow(L) {
+  if (!state.journey) return 1;
+  let k = 0;
+  for (const c of J_SLOW_AT) k = Math.max(k, 1 - THREE.MathUtils.smoothstep(Math.abs(L - c), J_SLOW_HALF, J_SLOW_HALF + J_SLOW_RAMP));
+  return 1 - (1 - J_SLOW_FACTOR) * k;
+}
+// Podróż: rozsuwanie dłoni – zmiana skali też zwalnia przy ciekawych widokach
+function journeyPinch() {
+  if (state.m5Hands.size < 2) return;
+  const [a, b] = [...state.m5Hands];
+  const d = _v1.setFromMatrixPosition(a.matrixWorld).distanceTo(_v2.setFromMatrixPosition(b.matrixWorld));
+  const t = 4 * Math.log10(Math.max(d, 0.02));                       // mocniej – zakres to wiele rzędów wielkości
+  if (!state.m5Pinch) { state.m5Pinch = { last: t }; return; }
+  mwZoom((t - state.m5Pinch.last) * jSlow(state.mwLog));
+  state.m5Pinch.last = t;
+}
 function mwSetScale(s) { state.mwAnim = null; state.mwLog = THREE.MathUtils.clamp(Math.log10(s), mwLogMin(), mwLogMax()); }
 
 // płynne pojawianie/znikanie warstwy w zakresie skali (log10 m/rok św.)
@@ -6434,18 +6458,19 @@ function setLayerOpacity(mats, alpha, group) {
 const _mwF = new THREE.Vector3(), _mwP = new THREE.Vector3(), _mwW = new THREE.Vector3();
 function mwStepAnim(dt) {
   const a = state.mwAnim;
-  if (a) {
-    a.t = Math.min(1, a.t + dt / a.dur);
-    state.mwLog = THREE.MathUtils.lerp(a.from, a.to, smooth(a.t));
-    if (a.t >= 1) state.mwAnim = null;
+  if (a) {                                            // przelot przyciskiem: płynny start i hamowanie, zwalnia przy widokach
+    a.t += dt;
+    const d = a.to - state.mwLog;
+    const v = state.mwSpeed * jSlow(state.mwLog) * Math.min(1, 0.25 + a.t) * Math.min(1, 0.1 + Math.abs(d) / 0.5);
+    state.mwLog += Math.sign(d) * Math.min(Math.abs(d), v * dt);
+    if (Math.abs(a.to - state.mwLog) < 1e-4) { state.mwLog = a.to; state.mwAnim = null; }
   }
 }
 // Podróż, dalej niż Galaktyka: galaktyki, sieć kosmiczna i tło z dawnego Trybu 5 pojawiają się płynnie wokół
 // Drogi Mlecznej (ona sama zostaje – ten sam obraz dysku, w tym samym miejscu i ułożeniu, więc nic nie przeskakuje)
 const J_COSMOS_FROM = J_COSMOS_LOG + 0.5, J_COSMOS_TO = J_COSMOS_LOG - 0.3;
 function journeyCosmos(dt) {
-  mwStepAnim(dt);
-  updateMode7(dt);
+  updateMode7(dt);                                    // (krok przelotu – mwStepAnim – jest w updateMode7)
   const L = state.mwLog, cA = 1 - THREE.MathUtils.smoothstep(L, J_COSMOS_TO, J_COSMOS_FROM);
   mode5Group.visible = cA > 0.005;
   state.jCosmos = mode5Group.visible;
@@ -9475,7 +9500,7 @@ function stickGalaxy(ctrl, dt) {
   const gp = ctrl.userData.inputSource && ctrl.userData.inputSource.gamepad;
   if (!gp || gp.axes.length <= ZOOM_STICK_AXIS) return;
   const x = gp.axes[ZOOM_STICK_AXIS - 1], y = gp.axes[ZOOM_STICK_AXIS];
-  if (Math.abs(y) > STICK_DEADZONE) mwZoom(-y * state.mwSpeed * dt);   // tylko przybliżanie i oddalanie – bez obrotu
+  if (Math.abs(y) > STICK_DEADZONE) mwZoom(-y * state.mwSpeed * jSlow(state.mwLog) * dt);   // tylko przybliżanie i oddalanie – bez obrotu; zwalnia przy widokach
 }
 
 // Gałka w Trybie 6: góra/dół = zoom
@@ -9907,7 +9932,8 @@ renderer.setAnimationLoop((time, frame) => {
     updateMode8(dt);
     updateHeadlight(mode8Light);
   } else if (state.mode === 7 || state.mode === 10) {
-    updateMode5Pinch(() => Math.pow(10, state.mwLog), mwSetScale, 4);   // mocniej – zakres to 11 rzędów wielkości
+    if (state.mode === 10) journeyPinch();
+    else updateMode5Pinch(() => Math.pow(10, state.mwLog), mwSetScale, 4);   // mocniej – zakres to 11 rzędów wielkości
     if (state.mode === 10) journeyCosmos(dt); else updateMode7(dt);
   }
   if (!shelf) cutPreview.visible = knife.visible = false;
@@ -9926,6 +9952,6 @@ window.solar = {
   shelf2, shelf4, m3Planet, people, universe, galaxies, cosmos, menuMesh, menuTab, floaters, controllers,
   setMode, startFocus, cutItem, glueAll, startGrab, endGrab, updateGrabs, grabs, zoomSystemAround,
   setKnife, updateKnife, tryKnifeCut, grabShelf, setMenuHidden, onPressStart, onPressEnd, startBehavior, startFollow, stopFollow, m3Extras, m3Features, setM3Zoom, rotateM3Planet, m3CosmosParts,
-  m3W, m3StartEvent, m3EndEvent, setM3Temperature, m3Atmo, mwSkyUniforms, mwPivot, stars, makeGlobeSampler, mwQuatSol,
+  m3W, m3StartEvent, m3EndEvent, setM3Temperature, m3Atmo, mwSkyUniforms, mwPivot, jSlow, stars, makeGlobeSampler, mwQuatSol,
   models, scaleItems, scaleJump, scaleZoom, m3Surface, layoutMode, mwGoTo, mwZoom, mw, stObjects, stRoot, toggleSheet, mwPath, stProbes, toggleProbes, toggleInside, sr, setSrSpeed, toggleSrShip, srShip, journey, layoutMode10, surfaceAction, atom, atomSet, hist, HIST, histSeek, histSetPlaying, t4, T4_SHAPES, t4Menu, t4SetW, m3Ride, enterSurface, exitSurface, scaleFocusClick, turnAroundFocus, pitchSystem,
 };

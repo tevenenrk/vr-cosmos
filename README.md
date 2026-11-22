@@ -45,7 +45,9 @@ Jedenaście trybów (przełączane na panelu menu):
   prawdziwą gęstość (ok. 0,004 na rok świetlny³, 55 tys. gwiazd do 160 lat św.), a gęsty fragment ramienia
   (ok. 150 tys. gwiazd w promieniu 4000 lat św.) przy oddalaniu przerzedza się powoli i znika dopiero, gdy widać
   już zarys całej Galaktyki. Gwiazdy Galaktyki z daleka przechodzą w obraz jej dysku narysowany z tych samych
-  gwiazd, a galaktyki, sieć kosmiczna i tło pojawiają się wokół niego i oddalają się razem z nim – bez przeskoku. Na środku widoku jest człowiek (aż widać całą Ziemię), potem Ziemia, a od
+  gwiazd, a galaktyki, sieć kosmiczna i tło pojawiają się wokół niego i oddalają się razem z nim – bez przeskoku.
+  W czterech miejscach lot sam zwalnia na kilka sekund: cały Układ Słoneczny przed Tobą, gwiazdy mijające Cię
+  koło głowy, cała Droga Mleczna i mijane galaktyki. Na środku widoku jest człowiek (aż widać całą Ziemię), potem Ziemia, a od
   Drogi Mlecznej – ona.
 - **Tryb 6 – Skala:** podróż przez 33 rzędy wielkości, od atomu (0,1 nm) przez DNA, wirusa, bakterię, włos,
   mrówkę, człowieka, autobus, płetwala, wieżę Eiffla, Everest, księżyce, Ziemię, Jowisza, Słońce, Betelgezę,
@@ -299,6 +301,7 @@ Wszystkie ustawienia są na samej górze pliku **`main.js`** (sekcja `KONFIGURAC
 | `ST_*` | Tryb 7: rozmiar i gęstość siatki, jasność linii, wysokość płachty, okres orbity Ziemi, siatka „w środku” (`ST_INSIDE_SCALE`), sondy (`ST_YEARS_PER_S`, `ST_TIME_EFFECT`) |
 | `GALLERY_*`, `SURFACE_*` | Tryb 2: galeria miniatur (odległość, odstępy, rozmiar), widok z powierzchni |
 | `J_SCALE_START_M`, `J_ATMOSPHERE_KM`, `J_SUN_ELEVATION_DEG` | Tryb 5: skala na starcie (1 = człowiek w prawdziwej wielkości), grubość atmosfery, wysokość Słońca nad człowiekiem |
+| `J_SLOW_AT`, `J_SLOW_FACTOR`, `J_SLOW_HALF`, `J_SLOW_RAMP` | Tryb 5: gdzie lot zwalnia (skale widoków), jak bardzo, na jakim odcinku i jak płynnie |
 | `HIST_POINTS`, `HIST_BRIGHTNESS`, `HIST_SPEEDS`, `HIST_DISTANCE_M` | Tryb 10 (w sekcji Trybu 10): liczba i jasność punktów, tempa, odległość sceny; długość rozdziałów – pole `dur` w tablicy `HIST` |
 | `T4_*` | Tryb 11: rozmiar i odległość bryły, siła perspektywy cienia (`T4_EYE_W`), zakres ruchu w 4. wymiarze, prędkość obrotu i rozpędu gałki |
 | `SR_*` | Tryb 8: „prędkość światła” w goglach, długość toru i statku, wysokość zegara świetlnego, prędkości do wyboru |
